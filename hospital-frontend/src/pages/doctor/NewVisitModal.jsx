@@ -88,7 +88,7 @@ export default function NewVisitModal({ onClose, onCreated }) {
         {step === 'done' && result && (
           <div className={styles.success}>
             <div className={styles.successIcon}>✅</div>
-            <h4>Visit Created</h4>
+            <h4>Visit Created!</h4>
             <p>Patient registered and bill opened successfully.</p>
             <div className={styles.billInfo}>
               <div className={styles.billRow}>
@@ -103,7 +103,12 @@ export default function NewVisitModal({ onClose, onCreated }) {
             <div className={styles.qrNote}>
               Share this Bill Number with the patient so they can view their bill.
             </div>
-            <button className={styles.submitBtn} onClick={onCreated}>Done</button>
+            <div className={styles.doneActions}>
+              <button className={styles.cancelBtn} onClick={onCreated}>Done</button>
+              <button className={styles.submitBtn} onClick={() => onCreated(result.bill)}>
+                Add Charges Now →
+              </button>
+            </div>
           </div>
         )}
       </div>

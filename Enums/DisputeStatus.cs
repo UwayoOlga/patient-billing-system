@@ -2,5 +2,9 @@
 {
     public enum DisputeStatus
     {
+        Open,
+        UnderReview,
+        Resolved,
+        Rejected
     }
 }

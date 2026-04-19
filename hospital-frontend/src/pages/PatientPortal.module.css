@@ -1,0 +1,234 @@
+.page {
+  min-height: 100vh;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 40px;
+  color: #0f172a;
+}
+
+.logo h1 { font-size: 24px; font-weight: 800; }
+.logoIcon { color: #0ea5e9; }
+
+/* ── Login Card ── */
+.authCard {
+  background: #fff;
+  padding: 32px;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.authCard h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; color: #0f172a; }
+.authCard p { font-size: 14px; color: #64748b; margin-bottom: 24px; }
+
+.form { display: flex; flex-direction: column; gap: 16px; }
+
+.input {
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 16px;
+  text-align: center;
+  font-family: monospace;
+  text-transform: uppercase;
+}
+
+.btn {
+  background: #0ea5e9;
+  color: #fff;
+  border: none;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── Bill Display ── */
+.billContainer {
+  width: 100%;
+  max-width: 700px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.billHeader {
+  background: #0f172a;
+  color: #fff;
+  padding: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.status-Open { color: #facc15; }
+.status-Finalized { color: #38bdf8; }
+.status-Paid { color: #4ade80; }
+
+.billInfo h2 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+.billInfo span { font-size: 14px; opacity: 0.7; }
+
+.billBody { padding: 32px; }
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #f1f5f9;
+  padding-bottom: 8px;
+}
+
+.itemList { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+
+.itemRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.itemName { font-weight: 600; color: #0f172a; }
+.itemSub { font-size: 12px; color: #94a3b8; }
+.itemPrice { font-weight: 700; color: #0f172a; }
+
+.summary {
+  background: #f8fafc;
+  padding: 24px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summaryRow { display: flex; justify-content: space-between; font-size: 15px; }
+.summaryRow.total {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 2px dashed #cbd5e1;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0ea5e9;
+}
+
+.qrFooter {
+  padding: 32px;
+  text-align: center;
+  border-top: 1px solid #f1f5f9;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.error { color: #ef4444; font-size: 14px; margin-bottom: 16px; }
+
+/* ── Tabs ── */
+.tabContainer {
+  display: flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 12px;
+  margin-bottom: 32px;
+  gap: 4px;
+}
+
+.tab {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab.active {
+  background: #fff;
+  color: #0ea5e9;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.backBtn {
+  background: none;
+  border: none;
+  color: #0ea5e9;
+  margin-top: 16px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* ── History ── */
+.historySection {
+  width: 100%;
+  max-width: 600px;
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.historyCard {
+  background: #fff;
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
+  display: grid;
+  grid-template-columns: 100px 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.historyCard:hover {
+  border-color: #0ea5e9;
+  background: #f8fafc;
+  transform: translateX(4px);
+}
+
+.hCardDate {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.hCardTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.hCardStatus {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.hCardPrice {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.hCardArrow {
+  color: #cbd5e1;
+  font-weight: bold;
+}

@@ -161,3 +161,19 @@
   padding: 10px 14px;
   width: 100%;
 }
+
+.doneActions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.doneActions .submitBtn {
+  background: #0e9f6e;
+  flex: 1;
+}
+
+.doneActions .submitBtn:hover { background: #057a55; }
+.doneActions .cancelBtn { flex: 0 0 auto; }

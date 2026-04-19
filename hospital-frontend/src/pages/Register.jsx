@@ -5,14 +5,15 @@ import styles from './Login.module.css'
 
 const ROLES = [
   { label: 'Doctor', value: 0 },
-  { label: 'Lab Technician', value: 1 },
+  { label: 'Lab Tech', value: 1 },
   { label: 'Pharmacist', value: 2 },
   { label: 'Nurse', value: 3 },
-  { label: 'Billing Staff', value: 4 },
+  { label: 'Cashier', value: 4 },
+  { label: 'Admin', value: 5 },
 ]
 
 export default function Register() {
-  const [form, setForm] = useState({ fullName: '', username: '', password: '', role: 0 })
+  const [form, setForm] = useState({ fullName: '', email: '', phoneNumber: '', password: '', role: 0 })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
@@ -30,7 +31,8 @@ export default function Register() {
     try {
       await api.post('/auth/register', {
         fullName: form.fullName,
-        username: form.username,
+        email: form.email,
+        phoneNumber: form.phoneNumber,
         password: form.password,
         role: Number(form.role),
       })
@@ -47,7 +49,7 @@ export default function Register() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.logo}>
-          <span className={styles.logoIcon}>🏥</span>
+          <svg className={styles.logoIcon} width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
           <h1>Hospital Billing</h1>
           <p>Create Staff Account</p>
         </div>
@@ -65,13 +67,22 @@ export default function Register() {
             />
           </div>
           <div className={styles.field}>
-            <label>Username</label>
+            <label>Email Address</label>
             <input
-              type="text"
-              value={form.username}
-              onChange={e => set('username', e.target.value)}
-              placeholder="drsarah"
+              type="email"
+              value={form.email}
+              onChange={e => set('email', e.target.value)}
+              placeholder="e.g. sarah@hospital.com"
               required
+            />
+          </div>
+          <div className={styles.field}>
+            <label>Phone Number</label>
+            <input
+              type="tel"
+              value={form.phoneNumber}
+              onChange={e => set('phoneNumber', e.target.value)}
+              placeholder="+254 700 000000"
             />
           </div>
           <div className={styles.field}>

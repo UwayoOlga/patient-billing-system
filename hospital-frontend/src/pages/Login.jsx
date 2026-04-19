@@ -5,7 +5,7 @@ import { setUser } from '../utils/auth'
 import styles from './Login.module.css'
 
 export default function Login() {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -16,14 +16,15 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/login', { username, password })
+      const { data } = await api.post('/auth/login', { email, password })
       setUser({ token: data.token, role: data.role, name: data.name })
       const roleRoutes = {
         Doctor: '/doctor',
-        LabTechnician: '/lab',
+        LabTech: '/lab',
         Pharmacist: '/pharmacy',
         Nurse: '/nurse',
-        BillingStaff: '/billing',
+        Cashier: '/billing',
+        Admin: '/admin',
       }
       navigate(roleRoutes[data.role] ?? '/doctor')
     } catch {
@@ -37,19 +38,19 @@ export default function Login() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.logo}>
-          <span className={styles.logoIcon}>🏥</span>
+          <svg className={styles.logoIcon} width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
           <h1>Hospital Billing</h1>
           <p>Staff Portal</p>
         </div>
         <form onSubmit={handleSubmit} className={styles.form}>
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.field}>
-            <label>Username</label>
+            <label>Email Address</label>
             <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="Enter your username"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="e.g. sarah@hospital.com"
               required
             />
           </div>
