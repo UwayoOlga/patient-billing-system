@@ -56,7 +56,7 @@ namespace HospitalBilling.Services
 
         public async Task<BillItemDto> AddBillItemAsync(AddBillItemDto dto, int staffId, StaffRole staffRole)
         {
-            var bill = await _db.Bills.FindAsync(dto.BillId)
+            var bill = await _db.Bills.Include(b => b.Patient).FirstOrDefaultAsync(b => b.Id == dto.BillId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
             if (bill.Status != BillStatus.Open)
@@ -87,8 +87,13 @@ namespace HospitalBilling.Services
                 UnitPrice = price,
                 Quantity = dto.Quantity,
                 Notes = dto.Notes,
-                // Lab tests and Medications start as incomplete until fulfilled by respective departments
-                IsCompleted = dto.Category != BillItemCategory.LabTest && dto.Category != BillItemCategory.Medication
+                InsuranceCoveragePercentage = Math.Clamp(bill.Patient.InsuranceCoveragePercentage, 0, 100),
+                // These categories are billable only after fulfillment by the responsible department.
+                IsCompleted = dto.Category != BillItemCategory.LabTest
+                    && dto.Category != BillItemCategory.Medication
+                    && dto.Category != BillItemCategory.NursingService
+                    && dto.Category != BillItemCategory.BedCharge
+                    && dto.Category != BillItemCategory.Consumable
             };
 
             _db.BillItems.Add(item);
@@ -126,6 +131,7 @@ namespace HospitalBilling.Services
                 throw new InvalidOperationException("Only lab tests can be marked as completed.");
 
             item.IsCompleted = true;
+            item.CompletedAt = DateTime.UtcNow;
             if (!string.IsNullOrWhiteSpace(resultNotes))
             {
                 item.Notes = resultNotes;
@@ -147,6 +153,7 @@ namespace HospitalBilling.Services
                 throw new InvalidOperationException("Only lab tests can be reverted.");
 
             item.IsCompleted = false;
+            item.CompletedAt = null;
             // Optionally clear out the result notes since it's going back to pending
             item.Notes = null; 
             await _db.SaveChangesAsync();
@@ -167,6 +174,41 @@ namespace HospitalBilling.Services
 
             item.Quantity = quantity;
             item.IsCompleted = true;
+            item.CompletedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task CompleteNursingOrderAsync(int billItemId, int staffId, int quantity, string? notes = null)
+        {
+            var item = await _db.BillItems
+                .Include(i => i.Bill)
+                .Include(i => i.AddedByStaff)
+                .FirstOrDefaultAsync(i => i.Id == billItemId)
+                ?? throw new KeyNotFoundException("Nursing order not found.");
+
+            if (item.Bill.Status != BillStatus.Open)
+                throw new InvalidOperationException("Cannot complete nursing orders for a finalized bill.");
+
+            if (item.Category != BillItemCategory.NursingService
+                && item.Category != BillItemCategory.BedCharge
+                && item.Category != BillItemCategory.Consumable)
+                throw new InvalidOperationException("Only nursing categories can be completed by nurse workflow.");
+
+            if (item.AddedByStaff.Role != StaffRole.Doctor)
+                throw new InvalidOperationException("Only doctor-ordered nursing tasks can be completed.");
+
+            if (quantity <= 0)
+                throw new InvalidOperationException("Quantity must be at least 1.");
+
+            item.Quantity = quantity;
+            item.IsCompleted = true;
+            item.CompletedAt = DateTime.UtcNow;
+
+            if (!string.IsNullOrWhiteSpace(notes))
+            {
+                item.Notes = notes.Trim();
+            }
+
             await _db.SaveChangesAsync();
         }
 
@@ -314,7 +356,10 @@ namespace HospitalBilling.Services
                     BillItemCategory.PrescribedTest,
                     BillItemCategory.Procedure,
                     BillItemCategory.LabTest,   // Doctor orders test
-                    BillItemCategory.Medication // Doctor orders medication
+                    BillItemCategory.Medication, // Doctor orders medication
+                    BillItemCategory.BedCharge, // Doctor orders nursing/ward care
+                    BillItemCategory.NursingService,
+                    BillItemCategory.Consumable
                 },
                 StaffRole.LabTech => new[]
                 {
@@ -324,12 +369,7 @@ namespace HospitalBilling.Services
                 {
                     BillItemCategory.Medication
                 },
-                StaffRole.Nurse => new[]
-                {
-                    BillItemCategory.BedCharge,
-                    BillItemCategory.NursingService,
-                    BillItemCategory.Consumable
-                },
+                StaffRole.Nurse => Array.Empty<BillItemCategory>(),
                 StaffRole.Cashier => Enum.GetValues<BillItemCategory>(), // full access
                 StaffRole.Admin => Enum.GetValues<BillItemCategory>(), // full access
                 _ => Array.Empty<BillItemCategory>()
@@ -354,6 +394,8 @@ namespace HospitalBilling.Services
             CreatedAt = bill.CreatedAt,
             FinalizedAt = bill.FinalizedAt,
             TotalAmount = bill.TotalAmount,
+            TotalInsurance = bill.TotalInsurance,
+            PatientLiability = bill.PatientLiability,
             TotalPaid = bill.TotalPaid,
             BalanceDue = bill.BalanceDue,
             Items = bill.Items.Select(MapItemToDto).ToList()
@@ -366,11 +408,15 @@ namespace HospitalBilling.Services
             Description = item.Description,
             UnitPrice = item.UnitPrice,
             Quantity = item.Quantity,
-            Subtotal = item.Quantity * item.UnitPrice,
+            Subtotal = item.GrossAmount,
+            CoveragePercentage = item.InsuranceCoveragePercentage,
+            InsuranceAmount = item.InsuranceAmount,
+            PatientAmount = item.PatientAmount,
             IsCompleted = item.IsCompleted,
             AddedBy = item.AddedByStaff?.FullName ?? "Unknown",
             AddedByRole = item.AddedByStaff?.Role.ToString() ?? "Unknown",
             AddedAt = item.AddedAt,
+            CompletedAt = item.CompletedAt,
             Notes = item.Notes
         };
     }

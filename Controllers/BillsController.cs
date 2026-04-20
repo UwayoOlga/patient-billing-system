@@ -30,6 +30,10 @@ namespace HospitalBilling.Controllers
         {
             var staffId = GetStaffId();
             var bills = await _billing.GetBillsForDoctorAsync(staffId);
+            if (GetStaffRole() == StaffRole.Doctor)
+            {
+                bills = bills.Select(HideInsuranceCoverage).ToList();
+            }
             return Ok(bills);
         }
 
@@ -148,6 +152,18 @@ namespace HospitalBilling.Controllers
         }
 
         /// <summary>
+        /// Nurse marks a doctor-ordered nursing service as completed/billable.
+        /// </summary>
+        [Authorize(Roles = "Nurse,Cashier,Admin")]
+        [HttpPatch("items/{itemId}/nursing-complete")]
+        public async Task<IActionResult> CompleteNursingOrder(int itemId, [FromBody] CompleteNursingOrderDto dto)
+        {
+            var staffId = GetStaffId();
+            await _billing.CompleteNursingOrderAsync(itemId, staffId, dto.Quantity, dto.Notes);
+            return Ok(new { message = "Nursing service completed successfully." });
+        }
+
+        /// <summary>
         /// Billing staff finalizes the bill (locks it for payment).
         /// </summary>
         [Authorize(Roles = "Cashier,Admin")]
@@ -168,6 +184,10 @@ namespace HospitalBilling.Controllers
         {
             var bill = await _billing.GetBillByIdAsync(billId);
             if (bill == null) return NotFound();
+            if (GetStaffRole() == StaffRole.Doctor)
+            {
+                bill = HideInsuranceCoverage(bill);
+            }
             return Ok(bill);
         }
 
@@ -190,6 +210,10 @@ namespace HospitalBilling.Controllers
         public async Task<IActionResult> GetBillsSummary()
         {
             var bills = await _billing.GetAllBillsAsync();
+            if (GetStaffRole() == StaffRole.Doctor)
+            {
+                bills = bills.Select(HideInsuranceCoverage).ToList();
+            }
             return Ok(bills.Select(b => new { b.Id, b.BillNumber, b.PatientName, b.Status, b.Items }));
         }
 
@@ -220,6 +244,7 @@ namespace HospitalBilling.Controllers
         {
             var staffId = GetStaffId();
             var bills = await _billing.GetTrashBillsForDoctorAsync(staffId);
+            bills = bills.Select(HideInsuranceCoverage).ToList();
             return Ok(bills);
         }
 
@@ -274,5 +299,19 @@ namespace HospitalBilling.Controllers
 
         private StaffRole GetStaffRole() =>
             Enum.Parse<StaffRole>(User.FindFirstValue(ClaimTypes.Role)!);
+
+        private static BillDto HideInsuranceCoverage(BillDto bill)
+        {
+            bill.TotalInsurance = 0;
+            bill.PatientLiability = 0;
+            bill.Items = bill.Items.Select(i =>
+            {
+                i.CoveragePercentage = null;
+                i.InsuranceAmount = 0;
+                i.PatientAmount = 0;
+                return i;
+            }).ToList();
+            return bill;
+        }
     }
 }

@@ -22,4 +22,10 @@ namespace HospitalBilling.DTOs
     {
         public int Quantity { get; set; }
     }
+
+    public class CompleteNursingOrderDto
+    {
+        public int Quantity { get; set; } = 1;
+        public string? Notes { get; set; }
+    }
 }

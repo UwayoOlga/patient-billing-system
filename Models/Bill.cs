@@ -29,8 +29,11 @@ namespace HospitalBilling.Models
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();
         public ICollection<Dispute> Disputes { get; set; } = new List<Dispute>();
 
-        public decimal TotalAmount => Items.Where(i => i.IsCompleted).Sum(i => i.Quantity * i.UnitPrice);
+        public decimal TotalAmount => Items.Where(i => i.IsCompleted).Sum(i => i.GrossAmount);
+        public decimal TotalInsurance => Items.Where(i => i.IsCompleted).Sum(i => i.InsuranceAmount);
+        public decimal PatientLiability => TotalAmount - TotalInsurance;
+        
         public decimal TotalPaid => Payments.Where(p => p.IsConfirmed).Sum(p => p.Amount);
-        public decimal BalanceDue => TotalAmount - TotalPaid;
+        public decimal BalanceDue => PatientLiability - TotalPaid;
     }
 }

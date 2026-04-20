@@ -127,6 +127,11 @@ export default function PatientPortal() {
                       {!item.isCompleted && <span style={{ marginLeft: '8px', fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>PENDING</span>}
                     </div>
                     <div className={styles.itemSub}>{item.category} × {item.quantity} {item.isCompleted ? '' : '(Not yet billable)'}</div>
+                    {item.isCompleted && (
+                      <div className={styles.itemSub}>
+                        Insurance ({item.coveragePercentage ?? 0}%): -RWF {item.insuranceAmount.toLocaleString()} | You Pay: RWF {item.patientAmount.toLocaleString()}
+                      </div>
+                    )}
                   </div>
                   <div className={styles.itemPrice} style={!item.isCompleted ? { color: '#94a3b8', textDecoration: 'line-through' } : {}}>
                     RWF {item.subtotal.toLocaleString()}
@@ -140,6 +145,14 @@ export default function PatientPortal() {
               <div className={styles.summaryRow}>
                 <span>Visit Subtotal</span>
                 <span>RWF {bill.totalAmount.toLocaleString()}</span>
+              </div>
+              <div className={styles.summaryRow}>
+                <span>Insurance Coverage</span>
+                <span style={{ color: '#059669', fontWeight: 600 }}>- RWF {bill.totalInsurance.toLocaleString()}</span>
+              </div>
+              <div className={styles.summaryRow}>
+                <span>Patient Liability</span>
+                <span>RWF {bill.patientLiability.toLocaleString()}</span>
               </div>
               <div className={styles.summaryRow}>
                 <span>Total Paid</span>

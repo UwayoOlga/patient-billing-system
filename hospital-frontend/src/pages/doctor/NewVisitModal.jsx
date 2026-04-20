@@ -2,9 +2,27 @@ import { useState } from 'react'
 import api from '../../utils/api'
 import styles from './NewVisitModal.module.css'
 
+const INSURANCE_OPTIONS = [
+  { value: '', label: 'No Insurance (Patient pays 100%)', coverage: 0 },
+  { value: 'RAMA', label: 'RAMA (80% covered)', coverage: 80 },
+  { value: 'MMI', label: 'MMI (85% covered)', coverage: 85 },
+  { value: 'SORAS', label: 'SORAS (90% covered)', coverage: 90 },
+]
+
 export default function NewVisitModal({ onClose, onCreated }) {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+  const todayIso = now.toISOString().slice(0, 10)
+
   const [step, setStep] = useState('patient') // 'patient' | 'done'
-  const [form, setForm] = useState({ fullName: '', dateOfBirth: '', phoneNumber: '' })
+  const [form, setForm] = useState({
+    fullName: '',
+    dateOfBirth: '',
+    phoneNumber: '',
+    insuranceProvider: '',
+    insuranceNumber: '',
+    insuranceCoveragePercentage: 0
+  })
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -13,9 +31,30 @@ export default function NewVisitModal({ onClose, onCreated }) {
     setForm(f => ({ ...f, [field]: value }))
   }
 
+  function handleInsuranceProviderChange(provider) {
+    const selected = INSURANCE_OPTIONS.find(opt => opt.value === provider) ?? INSURANCE_OPTIONS[0]
+    setForm(f => ({
+      ...f,
+      insuranceProvider: provider,
+      insuranceCoveragePercentage: selected.coverage,
+      insuranceNumber: provider ? f.insuranceNumber : '',
+    }))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+
+    if (form.insuranceProvider && !form.insuranceNumber.trim()) {
+      setError('Insurance number is required when insurance provider is selected.')
+      return
+    }
+
+    if (form.dateOfBirth > todayIso) {
+      setError('Date of birth cannot be in the future.')
+      return
+    }
+
     setLoading(true)
     try {
       // 1. Register patient
@@ -23,6 +62,9 @@ export default function NewVisitModal({ onClose, onCreated }) {
         fullName: form.fullName,
         dateOfBirth: form.dateOfBirth,
         phoneNumber: form.phoneNumber,
+        insuranceProvider: form.insuranceProvider || null,
+        insuranceNumber: form.insuranceNumber || null,
+        insuranceCoveragePercentage: Number(form.insuranceCoveragePercentage) || 0
       })
 
       // 2. Open a bill for them
@@ -63,6 +105,7 @@ export default function NewVisitModal({ onClose, onCreated }) {
                 type="date"
                 value={form.dateOfBirth}
                 onChange={e => set('dateOfBirth', e.target.value)}
+                max={todayIso}
                 required
               />
             </div>
@@ -74,6 +117,40 @@ export default function NewVisitModal({ onClose, onCreated }) {
                 onChange={e => set('phoneNumber', e.target.value)}
                 placeholder="+254 700 000 000"
                 required
+              />
+            </div>
+            <div className={styles.field}>
+              <label>Insurance Provider</label>
+              <select
+                value={form.insuranceProvider}
+                onChange={e => handleInsuranceProviderChange(e.target.value)}
+              >
+                {INSURANCE_OPTIONS.map(opt => (
+                  <option key={opt.value || 'none'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label>Insurance Number</label>
+              <input
+                type="text"
+                value={form.insuranceNumber}
+                onChange={e => set('insuranceNumber', e.target.value)}
+                placeholder="Insurance member number"
+                disabled={!form.insuranceProvider}
+                required={!!form.insuranceProvider}
+              />
+            </div>
+            <div className={styles.field}>
+              <label>Coverage Percentage (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={form.insuranceCoveragePercentage}
+                readOnly
               />
             </div>
             <div className={styles.actions}>

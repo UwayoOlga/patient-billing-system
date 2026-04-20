@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import api from '../utils/api'
 import { setUser } from '../utils/auth'
 import styles from './Login.module.css'
@@ -17,7 +17,8 @@ export default function Login() {
     setLoading(true)
     try {
       const { data } = await api.post('/auth/login', { email, password })
-      setUser({ token: data.token, role: data.role, name: data.name })
+      const normalizedRole = String(data.role || '').trim()
+      setUser({ token: data.token, role: normalizedRole, name: data.name })
       const roleRoutes = {
         Doctor: '/doctor',
         LabTech: '/lab',
@@ -26,7 +27,7 @@ export default function Login() {
         Cashier: '/billing',
         Admin: '/admin',
       }
-      navigate(roleRoutes[data.role] ?? '/doctor')
+      navigate(roleRoutes[normalizedRole] ?? '/login')
     } catch {
       setError('Invalid username or password.')
     } finally {
@@ -68,7 +69,7 @@ export default function Login() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
           <p className={styles.switchLink}>
-            No account yet? <Link to="/register">Create one</Link>
+            Account creation is managed by Admin.
           </p>
         </form>
       </div>

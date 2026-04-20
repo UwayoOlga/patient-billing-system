@@ -1,4 +1,4 @@
-﻿using HospitalBilling.Enums;
+using HospitalBilling.Enums;
 
 namespace HospitalBilling.Models
 {
@@ -19,8 +19,15 @@ namespace HospitalBilling.Models
 
         // For lab tests: marks the test as completed/billable
         public bool IsCompleted { get; set; } = true;
+        public DateTime? CompletedAt { get; set; }
 
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;
         public string? Notes { get; set; }
+
+        // Insurance Split
+        public int InsuranceCoveragePercentage { get; set; } = 0;
+        public decimal GrossAmount => UnitPrice * Quantity;
+        public decimal InsuranceAmount => GrossAmount * InsuranceCoveragePercentage / 100;
+        public decimal PatientAmount => GrossAmount - InsuranceAmount;
     }
 }

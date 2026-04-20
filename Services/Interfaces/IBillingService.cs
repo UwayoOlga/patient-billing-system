@@ -25,6 +25,9 @@ namespace HospitalBilling.Services.Interfaces
         // Pharmacist dispenses medication and adjusts quantity
         Task DispenseMedicationAsync(int billItemId, int staffId, int quantity);
 
+        // Nurse completes a doctor-ordered nursing item
+        Task CompleteNursingOrderAsync(int billItemId, int staffId, int quantity, string? notes = null);
+
         // Billing staff finalizes the bill
         Task<BillDto> FinalizeBillAsync(int billId, int staffId);
 

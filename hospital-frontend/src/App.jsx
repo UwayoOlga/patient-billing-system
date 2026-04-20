@@ -4,6 +4,7 @@ import DoctorDashboard from './pages/doctor/DoctorDashboard'
 import BillingDashboard from './pages/BillingDashboard'
 import LabDashboard from './pages/LabDashboard'
 import PharmacyDashboard from './pages/PharmacyDashboard'
+import NurseDashboard from './pages/NurseDashboard'
 import PatientPortal from './pages/PatientPortal'
 import LandingPage from './pages/LandingPage'
 import AdminDashboard from './pages/AdminDashboard'
@@ -14,8 +15,10 @@ function ProtectedRoute({ children, role }) {
   if (!user) return <Navigate to="/login" replace />
   
   if (role) {
-    const allowedRoles = Array.isArray(role) ? role : [role]
-    if (!allowedRoles.includes(user.role)) {
+    const normalizeRole = value => String(value || '').trim().toLowerCase()
+    const allowedRoles = (Array.isArray(role) ? role : [role]).map(normalizeRole)
+    const userRole = normalizeRole(user.role)
+    if (!allowedRoles.includes(userRole)) {
       return <Navigate to="/login" replace />
     }
   }
@@ -49,6 +52,14 @@ export default function App() {
         element={
           <ProtectedRoute role="LabTech">
             <LabDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/nurse"
+        element={
+          <ProtectedRoute role="Nurse">
+            <NurseDashboard />
           </ProtectedRoute>
         }
       />

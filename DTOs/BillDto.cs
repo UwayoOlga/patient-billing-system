@@ -1,4 +1,4 @@
-﻿using HospitalBilling.Enums;
+using HospitalBilling.Enums;
 
 namespace HospitalBilling.DTOs
 {
@@ -10,10 +10,14 @@ namespace HospitalBilling.DTOs
         public decimal UnitPrice { get; set; }
         public int Quantity { get; set; }
         public decimal Subtotal { get; set; }
+        public int? CoveragePercentage { get; set; }
+        public decimal InsuranceAmount { get; set; }
+        public decimal PatientAmount { get; set; }
         public bool IsCompleted { get; set; }
         public string AddedBy { get; set; } = string.Empty;
         public string AddedByRole { get; set; } = string.Empty;
         public DateTime AddedAt { get; set; }
+        public DateTime? CompletedAt { get; set; }
         public string? Notes { get; set; }
     }
 
@@ -26,6 +30,8 @@ namespace HospitalBilling.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime? FinalizedAt { get; set; }
         public decimal TotalAmount { get; set; }
+        public decimal TotalInsurance { get; set; }
+        public decimal PatientLiability { get; set; }
         public decimal TotalPaid { get; set; }
         public decimal BalanceDue { get; set; }
         public List<BillItemDto> Items { get; set; } = new();

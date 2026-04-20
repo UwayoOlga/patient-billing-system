@@ -65,7 +65,7 @@ export default function AddChargeModal({ bill, onClose, onAdded }) {
         // Map proper ENUM based on department responsible
         let targetCategory = 3 // default Procedure
         if (catObj) {
-          // Foolproof check: either it matches role 1 (int), 'LabTech' (string), or contains test keywords
+          // Foolproof check: map service to the owning department category.
           const textName = (catObj.name || '').toLowerCase()
           const isLab = catObj.responsibleRole === 1 || 
                         catObj.responsibleRole === 'LabTech' || 
@@ -76,6 +76,11 @@ export default function AddChargeModal({ bill, onClose, onAdded }) {
 
           if (isLab) targetCategory = 4 // LabTest
           else if (catObj.responsibleRole === 2 || catObj.responsibleRole === 'Pharmacist') targetCategory = 5 // Medication
+          else if (catObj.responsibleRole === 3 || catObj.responsibleRole === 'Nurse') {
+            if (textName.includes('bed')) targetCategory = 6 // BedCharge
+            else if (textName.includes('consumable')) targetCategory = 8 // Consumable
+            else targetCategory = 7 // NursingService
+          }
         }
 
         return api.post('/bills/items', {
