@@ -4,9 +4,13 @@
   --bg-sidebar: #0f172a;
   --card-bg: #ffffff;
   
-  --primary: #1a56db; /* Doctor */
+  --primary: #1a56db; /* Global Primary */
+  --primary-doctor: #1a56db;
   --primary-billing: #0ea5e9;
   --primary-lab: #059669;
+  --primary-pharmacy: #8b5cf6;
+  --primary-reception: #f59e0b;
+  --primary-nurse: #ec4899;
   
   --text-main: #0f172a;
   --text-muted: #64748b;
@@ -24,12 +28,16 @@
   --status-paid-text: #166534;
 
   /* Layout */
-  --sidebar-width: 240px;
+  --sidebar-width: 260px;
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 8px;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+
+  /* Responsiveness */
+  --header-height: 70px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -42,5 +50,35 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button { cursor: pointer; font-family: inherit; }
-input, select, textarea { font-family: inherit; }
+button { cursor: pointer; font-family: inherit; transition: all 0.2s; border: none; outline: none; }
+input, select, textarea { font-family: inherit; outline: none; }
+
+/* Utilities for unified dashboards */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: var(--shadow-sm);
+}
+
+.gradient-primary {
+  background: linear-gradient(135deg, var(--primary), #1e40af);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Responsive Table Scroll */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

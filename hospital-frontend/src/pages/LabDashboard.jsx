@@ -3,10 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './LabDashboard.module.css'
+import ProfileTab from '../components/ProfileTab'
 
 export default function LabDashboard() {
-  const user = getUser()
+  const [user, setUserState] = useState(getUser())
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const handleStorage = () => setUserState(getUser())
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
   const [tab, setTab] = useState('pending')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedVisit, setSelectedVisit] = useState(null)
@@ -15,6 +22,7 @@ export default function LabDashboard() {
   const [completedTests, setCompletedTests] = useState([])
   const [loading, setLoading] = useState(false)
   const [notification, setNotification] = useState({ message: '', type: 'success', icon: '' })
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [resultModal, setResultModal] = useState({ isOpen: false, item: null, notes: '' })
 
   const showNotification = (message, type = 'success', icon = '✨') => {
@@ -145,20 +153,30 @@ export default function LabDashboard() {
 
   return (
     <div className={styles.page}>
+      {/* Mobile Menu Trigger */}
+      <button className={styles.mobileMenuToggle} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+
+      {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarLogo}>
           <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10v6M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path><path d="M9 10a3 3 0 1 0 6 0 3 3 0 0 0-6 0z"></path></svg>
-          <span>LabPortal</span>
         </div>
         <nav className={styles.nav}>
-          <a className={`${styles.navItem} ${tab === 'pending' ? styles.active : ''}`} onClick={() => setTab('pending')}>
+          <a className={`${styles.navItem} ${tab === 'pending' ? styles.active : ''}`} onClick={() => { setTab('pending'); setMobileMenuOpen(false); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
             Pending Analysis
           </a>
-          <a className={`${styles.navItem} ${tab === 'completed' ? styles.active : ''}`} onClick={() => setTab('completed')}>
+          <a className={`${styles.navItem} ${tab === 'completed' ? styles.active : ''}`} onClick={() => { setTab('completed'); setMobileMenuOpen(false); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
             Completed Tests
+          </a>
+          <a className={`${styles.navItem} ${tab === 'profile' ? styles.active : ''}`} onClick={() => { setTab('profile'); setMobileMenuOpen(false); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            My Profile
           </a>
         </nav>
         <button className={styles.logoutBtn} onClick={handleLogout}>
@@ -215,7 +233,8 @@ export default function LabDashboard() {
             )}
           </div>
 
-          <div className={styles.headerActions}>
+          <div className={styles.headerActions} style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
+            <h2 className={styles.moduleTitle} style={{margin: 0, fontSize: '18px'}}>Welcome, {user?.name ?? 'Lab Tech'}</h2>
             <div className={styles.userInfo}>
               <div className={styles.avatar}>{user?.name?.charAt(0) ?? 'L'}</div>
               <div className={styles.userName}>{user?.name ?? 'Lab Tech'}</div>
@@ -223,7 +242,7 @@ export default function LabDashboard() {
           </div>
         </header>
 
-        {selectedVisit ? (
+        {tab === 'profile' ? <ProfileTab /> : selectedVisit ? (
           <div className={styles.visitWorkspace}>
             <div className={styles.workspaceHeader}>
               <button className={styles.backBtn} onClick={() => setSelectedVisit(null)}>← Back to Queue</button>

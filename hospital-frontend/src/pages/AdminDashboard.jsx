@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { logout } from '../utils/auth'
+import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './AdminDashboard.module.css'
+import ProfileTab from '../components/ProfileTab'
+import ReportsTab from './ReportsTab'
 
 const ROLE_MAP = {
   0: 'Doctor',
@@ -10,16 +12,25 @@ const ROLE_MAP = {
   2: 'Pharmacist',
   3: 'Nurse',
   4: 'Cashier',
-  5: 'Admin'
+  5: 'Admin',
+  6: 'Receptionist'
 }
 
 export default function AdminDashboard() {
+  const [user, setUserState] = useState(getUser())
   const navigate = useNavigate()
-  const [view, setView] = useState('Staff') // 'Staff' | 'Activity' | 'Pricing' | 'Finances'
+
+  useEffect(() => {
+    const handleStorage = () => setUserState(getUser())
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+  const [view, setView] = useState('Staff') // 'Staff' | 'Activity' | 'Pricing' | 'Finances' | 'Reports'
   const [staffList, setStaffList] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingStaff, setEditingStaff] = useState(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   
   // Service Categories State
   const [categories, setCategories] = useState([])
@@ -186,28 +197,42 @@ export default function AdminDashboard() {
 
   return (
     <div className={styles.adminPage}>
+      {/* Mobile Menu Trigger */}
+      <button className={styles.mobileMenuToggle} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+
+      {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarHeader}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
-          System Admin
         </div>
         <nav className={styles.nav}>
-          <div className={`${styles.navItem} ${view === 'Staff' ? styles.activeNavItem : ''}`} onClick={() => setView('Staff')}>
+          <div className={`${styles.navItem} ${view === 'Staff' ? styles.activeNavItem : ''}`} onClick={() => { setView('Staff'); setMobileMenuOpen(false); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
             Manage Staff
           </div>
-          <div className={`${styles.navItem} ${view === 'Activity' ? styles.activeNavItem : ''}`} onClick={() => setView('Activity')}>
+          <div className={`${styles.navItem} ${view === 'Activity' ? styles.activeNavItem : ''}`} onClick={() => { setView('Activity'); setMobileMenuOpen(false); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
             System Activity
           </div>
-          <div className={`${styles.navItem} ${view === 'Pricing' ? styles.activeNavItem : ''}`} onClick={() => setView('Pricing')}>
+          <div className={`${styles.navItem} ${view === 'Pricing' ? styles.activeNavItem : ''}`} onClick={() => { setView('Pricing'); setMobileMenuOpen(false); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
             Billing Config
           </div>
-          <div className={`${styles.navItem} ${view === 'Finances' ? styles.activeNavItem : ''}`} onClick={() => setView('Finances')}>
+          <div className={`${styles.navItem} ${view === 'Finances' ? styles.activeNavItem : ''}`} onClick={() => { setView('Finances'); setMobileMenuOpen(false); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
             Finances
+          </div>
+          <div className={`${styles.navItem} ${view === 'Reports' ? styles.activeNavItem : ''}`} onClick={() => { setView('Reports'); setMobileMenuOpen(false); }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+            Insights & Reports
+          </div>
+          <div className={`${styles.navItem} ${view === 'Profile' ? styles.activeNavItem : ''}`} onClick={() => { setView('Profile'); setMobileMenuOpen(false); }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            My Profile
           </div>
         </nav>
         <button className={styles.logoutBtn} onClick={handleLogout}>
@@ -218,15 +243,17 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className={styles.main}>
-        <div className={styles.header}>
-          <h2>{view === 'Staff' ? 'Staff Directory' : view}</h2>
-          {view === 'Staff' && (
-            <button className={styles.primaryBtn} onClick={() => setShowAddModal(true)}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              Add Staff Member
-            </button>
-          )}
-        </div>
+        {view === 'Profile' ? <ProfileTab /> : view === 'Reports' ? <ReportsTab /> : (
+          <>
+            <div className={styles.header}>
+              <h2>Welcome, {user?.name || 'Admin'} - {view === 'Staff' ? 'Staff Directory' : view}</h2>
+              {view === 'Staff' && (
+                <button className={styles.primaryBtn} onClick={() => setShowAddModal(true)}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  Add Staff Member
+                </button>
+              )}
+            </div>
 
         {view === 'Staff' && (
           <>
@@ -456,6 +483,8 @@ export default function AdminDashboard() {
                 </table>
               </div>
             </div>
+          </>
+        )}
           </>
         )}
       </main>

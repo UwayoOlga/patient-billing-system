@@ -8,6 +8,7 @@ import NurseDashboard from './pages/NurseDashboard'
 import PatientPortal from './pages/PatientPortal'
 import LandingPage from './pages/LandingPage'
 import AdminDashboard from './pages/AdminDashboard'
+import ReceptionistDashboard from './pages/ReceptionistDashboard'
 import { getUser } from './utils/auth'
 
 function ProtectedRoute({ children, role }) {
@@ -31,6 +32,14 @@ export default function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/patient/view" element={<PatientPortal />} />
+      <Route
+        path="/reception"
+        element={
+          <ProtectedRoute role="Receptionist">
+            <ReceptionistDashboard />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/doctor"
         element={

@@ -26,6 +26,9 @@ builder.Services.AddScoped<IBillingService, BillingService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IDisputeService, DisputeService>();
 
+// Background Tasks
+builder.Services.AddHostedService<HospitalBilling.Services.BackgroundTasks.BillCleanupService>();
+
 // JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"]!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -49,6 +52,9 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+app.UseMiddleware<HospitalBilling.Middleware.ExceptionMiddleware>();
+
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -72,6 +78,19 @@ using (var scope = app.Services.CreateScope())
             Email = "admin@hospital.rw",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("12345"),
             Role = HospitalBilling.Enums.StaffRole.Admin,
+            IsActive = true
+        });
+        db.SaveChanges();
+    }
+
+    if (!db.Staff.Any(s => s.Email == "cashier@hospital.rw"))
+    {
+        db.Staff.Add(new HospitalBilling.Models.Staff
+        {
+            FullName = "System Cashier",
+            Email = "cashier@hospital.rw",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("12345"),
+            Role = HospitalBilling.Enums.StaffRole.Cashier,
             IsActive = true
         });
         db.SaveChanges();

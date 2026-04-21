@@ -1,4 +1,4 @@
-﻿using HospitalBilling.Data;
+using HospitalBilling.Data;
 using HospitalBilling.DTOs;
 using HospitalBilling.Enums;
 using HospitalBilling.Models;
@@ -21,8 +21,11 @@ namespace HospitalBilling.Services
             var bill = await _db.Bills.FindAsync(dto.BillId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Finalized)
+            if (bill.Status != BillStatus.Finalized && bill.Status != BillStatus.Paid)
                 throw new InvalidOperationException("Bill must be finalized before recording payment.");
+
+            if (dto.Amount > bill.BalanceDue && dto.Amount > 0)
+                throw new InvalidOperationException($"Cannot pay more than the balance due (RWF {bill.BalanceDue}).");
 
             var payment = new Payment
             {

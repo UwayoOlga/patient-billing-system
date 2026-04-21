@@ -14,6 +14,8 @@
   padding: 24px;
   position: fixed;
   height: 100vh;
+  transition: all 0.3s ease;
+  z-index: 100;
 }
 
 .sidebarHeader {
@@ -73,6 +75,7 @@
   flex: 1;
   margin-left: 260px;
   padding: 40px;
+  width: calc(100% - 260px);
 }
 
 .header {
@@ -318,7 +321,82 @@
   cursor: pointer;
 }
 
+.mobileMenuToggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1001;
+  background: #fff;
+  color: #0f172a;
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.mobileOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 99;
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    left: -100%;
+  }
+  
+  .sidebar.mobileOpen {
+    left: 0;
+  }
+
+  .mobileMenuToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobileOverlay {
+    display: block;
+  }
+  
+  .main {
+    margin-left: 0;
+    width: 100%;
+    padding: 80px 20px 40px;
+  }
+}
+
 @media (max-width: 768px) {
-  .sidebar { display: none; }
-  .main { margin-left: 0; padding: 20px; }
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .financeGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  
+  .primaryBtn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .contentCard {
+    overflow-x: auto;
+  }
 }

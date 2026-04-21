@@ -26,10 +26,11 @@ export default function Login() {
         Nurse: '/nurse',
         Cashier: '/billing',
         Admin: '/admin',
+        Receptionist: '/reception',
       }
       navigate(roleRoutes[normalizedRole] ?? '/login')
-    } catch {
-      setError('Invalid username or password.')
+    } catch (err) {
+      setError(err.response?.data?.message || 'Invalid username or password.');
     } finally {
       setLoading(false)
     }

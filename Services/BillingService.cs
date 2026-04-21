@@ -33,7 +33,7 @@ namespace HospitalBilling.Services
                 .OrderByDescending(b => b.CreatedAt)
                 .ToListAsync();
 
-            return bills.Select(b => MapToDto(b, b.Patient.FullName)).ToList();
+            return bills.Select(b => MapToDto(b, b.Patient?.FullName ?? "Unknown Patient")).ToList();
         }
 
         public async Task<BillDto> CreateBillAsync(CreateBillDto dto, int createdByStaffId)
@@ -234,7 +234,7 @@ namespace HospitalBilling.Services
 
             await _db.SaveChangesAsync();
 
-            return MapToDto(bill, bill.Patient.FullName);
+            return MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
         }
 
         public async Task<BillDto?> GetBillByIdAsync(int billId)
@@ -245,7 +245,7 @@ namespace HospitalBilling.Services
                 .Include(b => b.Payments)
                 .FirstOrDefaultAsync(b => b.Id == billId);
 
-            return bill == null ? null : MapToDto(bill, bill.Patient.FullName);
+            return bill == null ? null : MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
         }
 
         public async Task<BillDto?> GetBillByIdentifierAsync(string billNumber)
@@ -256,7 +256,7 @@ namespace HospitalBilling.Services
                 .Include(b => b.Payments)
                 .FirstOrDefaultAsync(b => b.BillNumber == billNumber);
 
-            return bill == null ? null : MapToDto(bill, bill.Patient.FullName);
+            return bill == null ? null : MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
         }
 
         public async Task<List<BillDto>> GetBillsByPhoneAsync(string phoneNumber)
@@ -269,7 +269,7 @@ namespace HospitalBilling.Services
                 .OrderByDescending(b => b.CreatedAt)
                 .ToListAsync();
 
-            return bills.Select(b => MapToDto(b, b.Patient.FullName)).ToList();
+            return bills.Select(b => MapToDto(b, b.Patient?.FullName ?? "Unknown Patient")).ToList();
         }
 
         public async Task<List<BillDto>> GetAllBillsAsync()
@@ -281,7 +281,7 @@ namespace HospitalBilling.Services
                 .OrderByDescending(b => b.CreatedAt)
                 .ToListAsync();
 
-            return bills.Select(b => MapToDto(b, b.Patient.FullName)).ToList();
+            return bills.Select(b => MapToDto(b, b.Patient?.FullName ?? "Unknown Patient")).ToList();
         }
 
         public async Task DeleteBillAsync(int billId, int staffId, StaffRole staffRole)
@@ -310,7 +310,7 @@ namespace HospitalBilling.Services
                 .OrderByDescending(b => b.CreatedAt)
                 .ToListAsync();
 
-            return bills.Select(b => MapToDto(b, b.Patient.FullName)).ToList();
+            return bills.Select(b => MapToDto(b, b.Patient?.FullName ?? "Unknown Patient")).ToList();
         }
 
         public async Task RestoreBillAsync(int billId, int staffId)
@@ -398,7 +398,16 @@ namespace HospitalBilling.Services
             PatientLiability = bill.PatientLiability,
             TotalPaid = bill.TotalPaid,
             BalanceDue = bill.BalanceDue,
-            Items = bill.Items.Select(MapItemToDto).ToList()
+            Items = bill.Items.Select(MapItemToDto).ToList(),
+            Payments = bill.Payments.Select(p => new PaymentResponseDto
+            {
+                Id = p.Id,
+                Amount = p.Amount,
+                Method = p.Method,
+                IsConfirmed = p.IsConfirmed,
+                PaidAt = p.PaidAt,
+                Reference = p.Reference
+            }).ToList()
         };
 
         private static BillItemDto MapItemToDto(BillItem item) => new()

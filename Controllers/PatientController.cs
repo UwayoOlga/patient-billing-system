@@ -27,7 +27,8 @@ namespace HospitalBilling.Controllers
             _db = db;
         }
 
-        /// <summary>Register a new patient (any staff).</summary>
+        /// <summary>Register a new patient.</summary>
+        [Authorize(Roles = "Receptionist,Admin,Cashier")]
         [HttpPost]
         public async Task<IActionResult> Register([FromBody] CreatePatientDto dto)
         {
@@ -76,6 +77,7 @@ namespace HospitalBilling.Controllers
                 RegisteredAt = patient.RegisteredAt
             });
         }
+        [Authorize(Roles = "Receptionist,Admin,Cashier")]
         [HttpGet]
         public async Task<IActionResult> GetAllPatients()
         {
@@ -124,6 +126,56 @@ namespace HospitalBilling.Controllers
                 .ToListAsync();
 
             return Ok(patients);
+        }
+
+        /// <summary>Edit an existing patient.</summary>
+        [Authorize(Roles = "Receptionist,Admin,Cashier")]
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdatePatient(int id, [FromBody] CreatePatientDto dto)
+        {
+            if (dto.DateOfBirth > DateOnly.FromDateTime(DateTime.Now.Date))
+                return BadRequest(new { message = "Date of birth cannot be in the future." });
+
+            var patient = await _db.Patients.FindAsync(id);
+            if (patient == null) return NotFound(new { message = "Patient not found." });
+
+            var provider = string.IsNullOrWhiteSpace(dto.InsuranceProvider) ? null : dto.InsuranceProvider.Trim();
+            var insuranceNumber = string.IsNullOrWhiteSpace(dto.InsuranceNumber) ? null : dto.InsuranceNumber.Trim();
+            int coverage;
+
+            if (provider == null)
+            {
+                coverage = 0;
+                insuranceNumber = null;
+            }
+            else if (!InsuranceCoverageByProvider.TryGetValue(provider, out coverage))
+            {
+                return BadRequest(new { message = "Unsupported insurance provider. Please select a supported option." });
+            }
+            else if (insuranceNumber == null)
+            {
+                return BadRequest(new { message = "Insurance number is required when an insurance provider is selected." });
+            }
+
+            patient.FullName = dto.FullName;
+            patient.DateOfBirth = dto.DateOfBirth;
+            patient.PhoneNumber = dto.PhoneNumber;
+            patient.InsuranceProvider = provider;
+            patient.InsuranceNumber = insuranceNumber;
+            patient.InsuranceCoveragePercentage = coverage;
+
+            await _db.SaveChangesAsync();
+
+            return Ok(new PatientResponseDto
+            {
+                Id = patient.Id,
+                FullName = patient.FullName,
+                PhoneNumber = patient.PhoneNumber,
+                InsuranceProvider = patient.InsuranceProvider,
+                InsuranceNumber = patient.InsuranceNumber,
+                InsuranceCoveragePercentage = patient.InsuranceCoveragePercentage,
+                RegisteredAt = patient.RegisteredAt
+            });
         }
     }
 }

@@ -7,6 +7,7 @@ namespace HospitalBilling.Enums
         Pharmacist,
         Nurse,
         Cashier,
-        Admin
+        Admin,
+        Receptionist
     }
 }

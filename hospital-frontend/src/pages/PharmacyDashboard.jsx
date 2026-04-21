@@ -3,10 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './LabDashboard.module.css' // Reusing styles for consistency
+import ProfileTab from '../components/ProfileTab'
 
 export default function PharmacyDashboard() {
-  const user = getUser()
+  const [user, setUserState] = useState(getUser())
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const handleStorage = () => setUserState(getUser())
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
   const [tab, setTab] = useState('pending')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedVisit, setSelectedVisit] = useState(null)
@@ -15,7 +22,7 @@ export default function PharmacyDashboard() {
   const [dispensedHistory, setDispensedHistory] = useState([])
   const [loading, setLoading] = useState(false)
   const [notification, setNotification] = useState({ message: '', type: 'success', icon: '' })
-  
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [dispenseModal, setDispenseModal] = useState({ isOpen: false, item: null, qty: 1 })
 
   const showNotification = (message, type = 'success', icon = '✨') => {
@@ -94,20 +101,30 @@ export default function PharmacyDashboard() {
 
   return (
     <div className={styles.page}>
+      {/* Mobile Menu Trigger */}
+      <button className={styles.mobileMenuToggle} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+
+      {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarLogo}>
           <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.2 7.8l-7.1 7.1c-.8.8-2.2.8-3 0l-7.1-7.1c-.8-.8-.8-2.2 0-3l7.1-7.1c.8-.8 2.2-.8 3 0l7.1 7.1c.8.8.8 2.2 0 3z"/><path d="M12 7l1.5 1.5c.8.8.8 2.2 0 3L12 13l-1.5-1.5c-.8-.8-.8-2.2 0-3L12 7z"/></svg>
-          <span>PharmaNet</span>
         </div>
         <nav className={styles.nav}>
-          <a className={`${styles.navItem} ${tab === 'pending' ? styles.active : ''}`} onClick={() => setTab('pending')}>
+          <a className={`${styles.navItem} ${tab === 'pending' ? styles.active : ''}`} onClick={() => { setTab('pending'); setMobileMenuOpen(false); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
             Pending Prescriptions
           </a>
-          <a className={`${styles.navItem} ${tab === 'completed' ? styles.active : ''}`} onClick={() => setTab('completed')}>
+          <a className={`${styles.navItem} ${tab === 'completed' ? styles.active : ''}`} onClick={() => { setTab('completed'); setMobileMenuOpen(false); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             Dispense History
+          </a>
+          <a className={`${styles.navItem} ${tab === 'profile' ? styles.active : ''}`} onClick={() => { setTab('profile'); setMobileMenuOpen(false); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            My Profile
           </a>
         </nav>
         <button className={styles.logoutBtn} onClick={handleLogout}>
@@ -164,7 +181,8 @@ export default function PharmacyDashboard() {
             )}
           </div>
 
-          <div className={styles.headerActions}>
+          <div className={styles.headerActions} style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
+            <h2 className={styles.moduleTitle} style={{margin: 0, fontSize: '18px'}}>Welcome, {user?.name ?? 'Pharmacist'}</h2>
             <div className={styles.userInfo}>
               <div className={styles.avatar} style={{ background: '#7c3aed' }}>{user?.name?.charAt(0) ?? 'P'}</div>
               <div className={styles.userName}>{user?.name ?? 'Pharmacist'}</div>
@@ -172,7 +190,7 @@ export default function PharmacyDashboard() {
           </div>
         </header>
 
-        {selectedVisit ? (
+        {tab === 'profile' ? <ProfileTab /> : selectedVisit ? (
           <div className={styles.visitWorkspace}>
             <div className={styles.workspaceHeader}>
               <button className={styles.backBtn} onClick={() => setSelectedVisit(null)}>← Back to Queue</button>

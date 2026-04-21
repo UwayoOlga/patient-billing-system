@@ -3,15 +3,26 @@ import { useNavigate } from 'react-router-dom'
 import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './BillingDashboard.module.css'
+import ProfileTab from '../components/ProfileTab'
+import PaymentProcessingModal from '../components/PaymentProcessingModal'
 
 export default function BillingDashboard() {
-  const user = getUser()
+  const [user, setUserState] = useState(getUser())
   const navigate = useNavigate()
-  const [bills, setBills] = useState([])
+
+  useEffect(() => {
+    const handleStorage = () => setUserState(getUser())
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All')
 
   const [view, setView] = useState('Dashboard') // 'Dashboard' | 'Reports'
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedBillId, setSelectedBillId] = useState(null)
+  const [bills, setBills] = useState([])
 
   useEffect(() => { fetchBills() }, [])
 
@@ -42,7 +53,13 @@ export default function BillingDashboard() {
     navigate('/login')
   }
 
-  const filteredBills = filter === 'All' ? bills : bills.filter(b => b.status === filter)
+  const filteredBills = bills.filter(b => {
+    const matchesFilter = filter === 'All' || b.status === filter
+    const matchesSearch = b.billNumber.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         b.patientName.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesFilter && matchesSearch
+  })
+
   const totalOutstanding = bills.reduce((acc, b) => acc + (b.status !== 'Paid' ? b.balanceDue : 0), 0)
   const openCount = bills.filter(b => b.status === 'Open').length
   const finalizedCount = bills.filter(b => b.status === 'Finalized').length
@@ -60,20 +77,29 @@ export default function BillingDashboard() {
 
   return (
     <div className={styles.page}>
-      {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      {/* Mobile Menu Trigger */}
+      <button className={styles.mobileMenuToggle} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+
+      {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
+
+      <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarLogo}>
           <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-          <span>HospitalBilling</span>
         </div>
         <nav className={styles.nav}>
-          <a className={`${styles.navItem} ${view === 'Dashboard' ? styles.active : ''}`} onClick={() => setView('Dashboard')}>
+          <a className={`${styles.navItem} ${view === 'Dashboard' ? styles.active : ''}`} onClick={() => { setView('Dashboard'); setMobileMenuOpen(false); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
             Dashboard
           </a>
-          <a className={`${styles.navItem} ${view === 'Reports' ? styles.active : ''}`} onClick={() => setView('Reports')}>
+          <a className={`${styles.navItem} ${view === 'Reports' ? styles.active : ''}`} onClick={() => { setView('Reports'); setMobileMenuOpen(false); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
             Daily Reports
+          </a>
+          <a className={`${styles.navItem} ${view === 'Profile' ? styles.active : ''}`} onClick={() => { setView('Profile'); setMobileMenuOpen(false); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            My Profile
           </a>
         </nav>
         <button className={styles.logoutBtn} onClick={handleLogout}>
@@ -86,7 +112,7 @@ export default function BillingDashboard() {
       <main className={styles.main}>
         <header className={styles.header}>
           <h2 className={styles.moduleTitle}>
-            {view === 'Dashboard' ? 'Revenue & Billing' : 'Hospital Performance Reports'}
+            Welcome, {user?.name ?? 'Billing Staff'}
           </h2>
           <div className={styles.userInfo}>
             <div className={styles.avatar}>{user?.name?.charAt(0) ?? 'B'}</div>
@@ -97,7 +123,7 @@ export default function BillingDashboard() {
           </div>
         </header>
 
-        {view === 'Dashboard' && (
+        {view === 'Profile' ? <ProfileTab /> : view === 'Dashboard' && (
           <>
             {/* Stats */}
             <div className={styles.statsRow}>
@@ -121,7 +147,17 @@ export default function BillingDashboard() {
 
             {/* List Control */}
             <div className={styles.listControl}>
-              <h3 className={styles.sectionTitle}>Patient Bills</h3>
+              <div className={styles.searchSection}>
+                <h3 className={styles.sectionTitle}>Hospital Revenue Records</h3>
+                <div className={styles.searchBar}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input 
+                    placeholder="Search by Bill ID or Patient Name..." 
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
               <div className={styles.filterTabs}>
                 {['All', 'Open', 'Finalized', 'Paid'].map(t => (
                   <div
@@ -166,27 +202,15 @@ export default function BillingDashboard() {
                         <td>{new Date(bill.createdAt).toLocaleDateString()}</td>
                         <td className={styles.amount}>RWF {bill.balanceDue.toLocaleString()}</td>
                         <td>
-                          {bill.status === 'Open' && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              {bill.items?.some(i => !i.isCompleted) ? (
-                                <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 'bold' }}>
-                                  ⚠️ {bill.items.filter(i => !i.isCompleted).length} PENDINGS
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: '10px', color: '#059669', fontWeight: 'bold' }}>
-                                  READY FOR PAYMENT
-                                </span>
-                              )}
-                              <button 
-                                className={styles.actionBtn}
-                                onClick={() => handleFinalize(bill.id)}
-                                disabled={bill.items?.some(i => !i.isCompleted)}
-                                style={bill.items?.some(i => !i.isCompleted) ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(1)' } : {}}
-                                title={bill.items?.some(i => !i.isCompleted) ? 'Cannot finalize while services are pending.' : ''}
-                              >
-                                {bill.items?.some(i => !i.isCompleted) ? 'Hold' : 'Finalize & Pay'}
-                              </button>
-                            </div>
+                          {bill.status === 'Finalized' || bill.status === 'Open' ? (
+                            <button 
+                              className={styles.payBtn}
+                              onClick={() => setSelectedBillId(bill.id)}
+                            >
+                              Process Payment
+                            </button>
+                          ) : (
+                            <span className={styles.completedTag}>Fully Paid</span>
                           )}
                         </td>
                       </tr>
@@ -226,6 +250,14 @@ export default function BillingDashboard() {
           </div>
         )}
       </main>
+
+      {selectedBillId && (
+        <PaymentProcessingModal 
+          billId={selectedBillId}
+          onClose={() => setSelectedBillId(null)}
+          onPaymentSuccess={fetchBills}
+        />
+      )}
     </div>
   )
 }

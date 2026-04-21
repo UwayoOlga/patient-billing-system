@@ -35,6 +35,7 @@ namespace HospitalBilling.DTOs
         public decimal TotalPaid { get; set; }
         public decimal BalanceDue { get; set; }
         public List<BillItemDto> Items { get; set; } = new();
+        public List<PaymentResponseDto> Payments { get; set; } = new();
     }
 
     public class CreateBillDto

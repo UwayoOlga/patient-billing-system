@@ -2,14 +2,21 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getUser, logout } from '../../utils/auth'
 import api from '../../utils/api'
-import NewVisitModal from './NewVisitModal'
+
 import AddChargeModal from './AddChargeModal'
 import VisitDetailsModal from './VisitDetailsModal'
 import styles from './DoctorDashboard.module.css'
+import ProfileTab from '../../components/ProfileTab'
 
 export default function DoctorDashboard() {
-  const user = getUser()
+  const [user, setUserState] = useState(getUser())
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const handleStorage = () => setUserState(getUser())
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
 
   const [activeTab, setActiveTab] = useState('dashboard')
   const [bills, setBills] = useState([])
@@ -21,17 +28,14 @@ export default function DoctorDashboard() {
   const [patientsLoading, setPatientsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [trashBills, setTrashBills] = useState([])
-  const [profile, setProfile] = useState(null)
-  const [profileLoading, setProfileLoading] = useState(false)
-  const [updateMsg, setUpdateMsg] = useState({ type: '', text: '' })
   const [profileForm, setProfileForm] = useState({ fullName: '', newPassword: '' })
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => { fetchBills() }, [])
 
   useEffect(() => {
     if (activeTab === 'patients') fetchPatients()
     if (activeTab === 'trash') fetchTrash()
-    if (activeTab === 'profile') fetchProfile()
   }, [activeTab])
 
   async function fetchBills() {
@@ -81,42 +85,6 @@ export default function DoctorDashboard() {
     }
   }
 
-  async function fetchProfile() {
-    setProfileLoading(true)
-    try {
-      const { data } = await api.get('/staff/me')
-      setProfile(data)
-      setProfileForm({ 
-        fullName: data.fullName, 
-        phoneNumber: data.phoneNumber || '', 
-        newPassword: '' 
-      })
-    } catch {
-      // silently fail
-    } finally {
-      setProfileLoading(false)
-    }
-  }
-
-  async function handleUpdateProfile(e) {
-    e.preventDefault()
-    setProfileLoading(true)
-    setUpdateMsg({ type: '', text: '' })
-    try {
-      await api.put('/staff/me', profileForm)
-      const { data } = await api.get('/staff/me') // Re-fetch to get fresh DB data
-      setProfile(data)
-      setUpdateMsg({ type: 'success', text: 'Profile updated successfully!' })
-      // Update local storage
-      const localUser = JSON.parse(localStorage.getItem('user'))
-      localUser.name = data.fullName
-      localStorage.setItem('user', JSON.stringify(localUser))
-    } catch (err) {
-      setUpdateMsg({ type: 'error', text: err.response?.data?.message || 'Update failed' })
-    } finally {
-      setProfileLoading(false)
-    }
-  }
 
   async function restoreBill(billId) {
     try {
@@ -185,18 +153,28 @@ export default function DoctorDashboard() {
 
   return (
     <div className={styles.page}>
+      {/* Mobile Menu Trigger */}
+      <button className={styles.mobileMenuToggle} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+
+      {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarLogo}>
           <svg className={styles.logoIcon} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          <span>HospitalBilling</span>
         </div>
         <nav className={styles.nav}>
           {navItems.map(item => (
             <button
               key={item.key}
               className={`${styles.navItem} ${activeTab === item.key ? styles.active : ''}`}
-              onClick={() => { setActiveTab(item.key); setSearchQuery('') }}
+              onClick={() => { 
+                setActiveTab(item.key); 
+                setSearchQuery('');
+                setMobileMenuOpen(false); // Close on click for mobile
+              }}
             >
               {item.icon}
               {item.label}
@@ -215,11 +193,7 @@ export default function DoctorDashboard() {
         <header className={styles.header}>
           <div>
             <h2 className={styles.moduleTitle}>
-              {activeTab === 'dashboard' && 'Doctor Module'}
-              {activeTab === 'patients' && 'All Patients'}
-              {activeTab === 'visits' && 'Visit History'}
-              {activeTab === 'trash' && 'Trash / Deleted Visits'}
-              {activeTab === 'profile' && 'My Profile'}
+              Welcome, Dr. {user?.name ?? 'Doctor'}
             </h2>
           </div>
           <div className={styles.userInfo}>
@@ -250,18 +224,6 @@ export default function DoctorDashboard() {
               </div>
             </div>
 
-            <div className={styles.newVisitCard}>
-              <div className={styles.newVisitIcon}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </div>
-              <div>
-                <div className={styles.newVisitTitle}>Start New Patient Visit</div>
-                <div className={styles.newVisitSub}>Register a new patient and begin consultation</div>
-              </div>
-              <button className={styles.newVisitBtn} onClick={() => setShowModal(true)}>
-                New Visit
-              </button>
-            </div>
 
             <section className={styles.section}>
               <h3 className={styles.sectionTitle}>Today's Active Visits</h3>
@@ -462,94 +424,9 @@ export default function DoctorDashboard() {
         )}
 
         {/* ─── PROFILE TAB ─── */}
-        {activeTab === 'profile' && (
-          <div className={styles.profileContainer}>
-            {profileLoading && !profile ? (
-              <div className={styles.empty}>Loading profile...</div>
-            ) : (
-              <div className={styles.profileCard}>
-                <div className={styles.profileHeader}>
-                  <div className={styles.profileAvatarLarge}>{profile?.fullName?.charAt(0)}</div>
-                  <div className={styles.profileTitle}>
-                    <h3>{profile?.fullName || 'No Name Set'}</h3>
-                    <div className={styles.profileContactInfo}>
-                      <span className={styles.profilePhone}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                        {profile?.phoneNumber || 'No phone set'}
-                      </span>
-                      <span className={styles.profileRoleBadge}>{profile?.role}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <form className={styles.profileForm} onSubmit={handleUpdateProfile}>
-                  <div className={styles.formGrid}>
-                    <div className={styles.formGroup}>
-                      <label>Full Name</label>
-                      <input 
-                        type="text" 
-                        value={profileForm.fullName}
-                        onChange={e => setProfileForm({...profileForm, fullName: e.target.value})}
-                        required
-                        placeholder="e.g. Dr. John Doe"
-                      />
-                    </div>
-                    <div className={styles.formGroup}>
-                      <label>Phone Number</label>
-                      <input 
-                        type="tel" 
-                        value={profileForm.phoneNumber}
-                        onChange={e => setProfileForm({...profileForm, phoneNumber: e.target.value})}
-                        placeholder="e.g. +1 555-0123"
-                      />
-                    </div>
-                    <div className={styles.formGroup}>
-                      <label>Username (System ID)</label>
-                      <input type="text" value={profile?.username} disabled title="Username cannot be changed" />
-                    </div>
-                    <div className={styles.formGroup}>
-                      <label>New Password (Optional)</label>
-                      <input 
-                        type="password" 
-                        placeholder="Leave blank to keep current"
-                        value={profileForm.newPassword}
-                        onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})}
-                      />
-                    </div>
-                  </div>
-
-                  {updateMsg.text && (
-                    <div className={updateMsg.type === 'success' ? styles.successMsg : styles.errorMsg}>
-                      {updateMsg.text === 'Profile updated successfully!' ? (
-                        <div className={styles.successContent}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          Changes saved to database
-                        </div>
-                      ) : updateMsg.text}
-                    </div>
-                  )}
-
-                  <button type="submit" className={styles.saveProfileBtn} disabled={profileLoading}>
-                    {profileLoading ? 'Syncing Changes...' : 'Save Profile Changes'}
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
-        )}
+        {activeTab === 'profile' && <ProfileTab />}
       </main>
 
-      {showModal && (
-        <NewVisitModal
-          onClose={() => setShowModal(false)}
-          onCreated={(bill) => {
-            setShowModal(false)
-            fetchBills()
-            // If doctor clicked "Add Charges Now", open AddChargeModal immediately
-            if (bill) setSelectedBill(bill)
-          }}
-        />
-      )}
 
       {selectedBill && (
         <AddChargeModal

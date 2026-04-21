@@ -8,7 +8,7 @@ namespace HospitalBilling.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin,Cashier")]
+    [Authorize]
     public class StaffController : ControllerBase
     {
         private readonly AppDbContext _db;
@@ -61,6 +61,7 @@ namespace HospitalBilling.Controllers
             return Ok(new { message = "Profile updated successfully." });
         }
 
+        [Authorize(Roles = "Admin")]
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {

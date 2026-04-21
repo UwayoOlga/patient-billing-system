@@ -18,11 +18,17 @@ namespace HospitalBilling.Controllers
         }
 
         [HttpGet("ledger")]
-        public async Task<IActionResult> GetGlobalLedger()
+        public async Task<IActionResult> GetGlobalLedger(DateTime? startDate, DateTime? endDate)
         {
-            var payments = await _db.Payments
+            var query = _db.Payments
                 .Include(p => p.Bill).ThenInclude(b => b.Patient)
                 .Include(p => p.ConfirmedByStaff)
+                .AsQueryable();
+
+            if (startDate.HasValue) query = query.Where(p => p.PaidAt >= startDate.Value);
+            if (endDate.HasValue) query = query.Where(p => p.PaidAt <= endDate.Value);
+
+            var payments = await query
                 .OrderByDescending(p => p.PaidAt)
                 .Select(p => new
                 {
@@ -41,45 +47,20 @@ namespace HospitalBilling.Controllers
             return Ok(payments);
         }
 
-        [HttpGet("debts")]
-        public async Task<IActionResult> GetUnpaidVisits()
-        {
-            // Visits that are finalized but still have a balance due
-            // Note: In EF Core 10, we'll calculate the balance on the fly
-            var bills = await _db.Bills
-                .Include(b => b.Patient)
-                .Include(b => b.Items)
-                .Include(b => b.Payments)
-                .Where(b => b.Status != HospitalBilling.Enums.BillStatus.Trash)
-                .ToListAsync();
-
-            var debts = bills
-                .Select(b => new
-                {
-                    b.Id,
-                    b.BillNumber,
-                    PatientName = b.Patient.FullName,
-                    b.CreatedAt,
-                    TotalAmount = b.Items.Sum(i => i.Quantity * i.UnitPrice),
-                    TotalPaid = b.Payments.Where(p => p.IsConfirmed).Sum(p => p.Amount),
-                })
-                .Where(x => x.TotalAmount - x.TotalPaid > 0)
-                .OrderByDescending(x => x.TotalAmount - x.TotalPaid)
-                .ToList();
-
-            return Ok(debts);
-        }
-
         [HttpGet("summary")]
-        public async Task<IActionResult> GetFinanceSummary()
+        public async Task<IActionResult> GetFinanceSummary(DateTime? startDate, DateTime? endDate)
         {
-            var today = DateTime.UtcNow.Date;
+            var query = _db.Payments.Where(p => p.IsConfirmed);
+            if (startDate.HasValue) query = query.Where(p => p.PaidAt >= startDate.Value);
+            if (endDate.HasValue) query = query.Where(p => p.PaidAt <= endDate.Value);
+
+            var totalRevenue = await query.SumAsync(p => p.Amount);
             
-            var totalRevenue = await _db.Payments.Where(p => p.IsConfirmed).SumAsync(p => p.Amount);
-            var todayRevenue = await _db.Payments.Where(p => p.IsConfirmed && p.PaidAt >= today).SumAsync(p => p.Amount);
-            
-            var departmentRevenue = await _db.BillItems
-                .Include(bi => bi.Bill).ThenInclude(b => b.Payments)
+            var deptQuery = _db.BillItems.AsQueryable();
+            if (startDate.HasValue) deptQuery = deptQuery.Where(bi => bi.AddedAt >= startDate.Value);
+            if (endDate.HasValue) deptQuery = deptQuery.Where(bi => bi.AddedAt <= endDate.Value);
+
+            var departmentRevenue = await deptQuery
                 .GroupBy(bi => bi.Category)
                 .Select(g => new {
                     Department = g.Key.ToString(),
@@ -89,9 +70,27 @@ namespace HospitalBilling.Controllers
 
             return Ok(new {
                 TotalRevenue = totalRevenue,
-                TodayRevenue = todayRevenue,
                 DepartmentRevenue = departmentRevenue
             });
+        }
+
+        [HttpGet("trends")]
+        public async Task<IActionResult> GetRevenueTrends()
+        {
+            // Revenue for the last 7 days
+            var weekAgo = DateTime.UtcNow.Date.AddDays(-7);
+            
+            var trends = await _db.Payments
+                .Where(p => p.IsConfirmed && p.PaidAt >= weekAgo)
+                .GroupBy(p => p.PaidAt.Date)
+                .Select(g => new {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Amount = g.Sum(x => x.Amount)
+                })
+                .OrderBy(x => x.Date)
+                .ToListAsync();
+
+            return Ok(trends);
         }
     }
 }

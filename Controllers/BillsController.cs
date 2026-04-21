@@ -64,9 +64,9 @@ namespace HospitalBilling.Controllers
         }
 
         /// <summary>
-        /// Open a new bill for a patient (any staff).
+        /// Open a new bill for a patient.
         /// </summary>
-        [Authorize]
+        [Authorize(Roles = "Receptionist,Admin,Cashier")]
         [HttpPost]
         public async Task<IActionResult> CreateBill([FromBody] CreateBillDto dto)
         {
@@ -298,7 +298,7 @@ namespace HospitalBilling.Controllers
             int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
         private StaffRole GetStaffRole() =>
-            Enum.Parse<StaffRole>(User.FindFirstValue(ClaimTypes.Role)!);
+            Enum.Parse<StaffRole>(User.FindFirstValue(ClaimTypes.Role)!, true);
 
         private static BillDto HideInsuranceCoverage(BillDto bill)
         {
