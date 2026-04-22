@@ -727,3 +727,34 @@
 
   .formGrid { grid-template-columns: 1fr; }
 }
+
+/* Triage Badges */
+.badgeRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.urgencyBadge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.urgencyNormal { background: #f1f5f9; color: #475569; }
+.urgencyUrgent { background: #fff7ed; color: #c2410c; }
+.urgencyEmergency { 
+  background: #fef2f2; 
+  color: #dc2626; 
+  border: 1px solid #fee2e2;
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}

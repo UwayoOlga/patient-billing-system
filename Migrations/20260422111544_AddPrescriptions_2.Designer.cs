@@ -4,6 +4,7 @@ using HospitalBilling.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HospitalBilling.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260422111544_AddPrescriptions_2")]
+    partial class AddPrescriptions_2
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -97,9 +100,6 @@ namespace HospitalBilling.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("CompletedByStaffId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -128,8 +128,6 @@ namespace HospitalBilling.Migrations
                     b.HasIndex("AddedByStaffId");
 
                     b.HasIndex("BillId");
-
-                    b.HasIndex("CompletedByStaffId");
 
                     b.ToTable("BillItems");
                 });
@@ -465,16 +463,9 @@ namespace HospitalBilling.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("HospitalBilling.Models.Staff", "CompletedByStaff")
-                        .WithMany()
-                        .HasForeignKey("CompletedByStaffId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.Navigation("AddedByStaff");
 
                     b.Navigation("Bill");
-
-                    b.Navigation("CompletedByStaff");
                 });
 
             modelBuilder.Entity("HospitalBilling.Models.Dispute", b =>

@@ -8,5 +8,6 @@ namespace HospitalBilling.Models
         public HospitalBilling.Enums.StaffRole ResponsibleRole { get; set; } // Staff role responsible for this service
         public string? Description { get; set; }
         public bool IsActive { get; set; } = true;
+        public int? StockQuantity { get; set; }
     }
 }

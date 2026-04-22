@@ -61,7 +61,7 @@ namespace HospitalBilling.Controllers
             return Ok(new { message = "Profile updated successfully." });
         }
 
-        [Authorize(Roles = "Admin")]
+        [Authorize]
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {

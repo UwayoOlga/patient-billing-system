@@ -2,9 +2,12 @@ import { useRef, useState, useEffect } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 import api from '../../utils/api'
 import styles from './VisitDetailsModal.module.css'
+import AddPrescriptionModal from './AddPrescriptionModal'
 
 export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
   const [billData, setBillData] = useState(bill)
+  const [prescriptions, setPrescriptions] = useState([])
+  const [showAddPrescription, setShowAddPrescription] = useState(false)
   const printRef = useRef(null)
   const sigPadRef = useRef(null)
   const [signatureUrl, setSignatureUrl] = useState(null)
@@ -14,6 +17,8 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
     try {
       const { data } = await api.get(`/bills/${bill.id}`)
       setBillData(data)
+      const rxRes = await api.get(`/prescriptions/bill/${bill.id}`)
+      setPrescriptions(rxRes.data)
       if (onUpdated) onUpdated()
     } catch (err) {
       console.error(err)
@@ -32,6 +37,10 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
       setDeletingId(null)
     }
   }
+
+  useEffect(() => {
+    reloadBill()
+  }, [])
 
   function handleSaveSignature() {
     if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
@@ -77,10 +86,12 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
           {/* Printable Hospital Header */}
           <div className={styles.hospitalHeader}>
             <div className={styles.logoRow}>
-              <svg className={styles.hospitalLogo} width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-              <h2>HospitalBilling Clinical Summary</h2>
+              <div className={styles.logoCircle}>H</div>
+              <div className={styles.hospitalInfo}>
+                <h2>RWANDA DIGITAL MEDICAL CENTER</h2>
+                <p className={styles.hospitalMotto}>Excellence in Healthcare | Clinical Summary</p>
+              </div>
             </div>
-            <p className={styles.hospitalMotto}>Excellence in Healthcare</p>
           </div>
 
           {/* Patient info card */}
@@ -192,11 +203,43 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
 
             {/* Prescriptions and Digital Signature */}
             <div className={styles.sectionBlock}>
-              <h4 className={styles.blockTitle}>Prescriptions / Treatment Plan</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h4 className={styles.blockTitle} style={{ marginBottom: 0 }}>Prescriptions / Treatment Plan</h4>
+                {billData.status === 'Open' && (
+                  <button 
+                    className={styles.addBtn}
+                    onClick={() => setShowAddPrescription(true)}
+                  >
+                    + Prescribe Meds
+                  </button>
+                )}
+              </div>
               <div className={styles.prescriptionBox}>
-                <p>Medication dispensed via pharmacy system or external prescription.</p>
+                {prescriptions.length === 0 ? (
+                  <p>No prescriptions recorded yet.</p>
+                ) : (
+                  <div className={styles.itemsList}>
+                    {prescriptions.map(rx => (
+                      <div key={rx.id} className={styles.itemRow} style={{ borderLeft: rx.status === 0 ? '4px solid #f59e0b' : '4px solid #10b981' }}>
+                        <div className={styles.itemHeader}>
+                          <div className={styles.itemMain}>
+                            <span className={styles.itemCat}>{rx.drugName} ({rx.dosage})</span>
+                            <span className={styles.itemDesc}>Take {rx.frequency} for {rx.duration}</span>
+                          </div>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: rx.status === 0 ? '#f59e0b' : '#10b981' }}>
+                            {rx.status === 0 ? 'Pending' : 'Dispensed'}
+                          </span>
+                        </div>
+                        <div className={styles.itemFooter}>
+                          <span>Prescribed by: {rx.prescribedByStaff?.fullName}</span>
+                          <span>{new Date(rx.prescribedAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 
-                <div className={styles.signatureSection}>
+                <div className={styles.signatureSection} style={{ marginTop: '2rem' }}>
                   <div className={styles.docSignatureInfo}>
                     <span className={styles.docRole}>Attending Physician</span>
                     <span>Date: {new Date().toLocaleDateString()}</span>
@@ -233,6 +276,17 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
           </div>
         </div>
       </div>
+
+      {showAddPrescription && (
+        <AddPrescriptionModal 
+          bill={billData} 
+          onClose={() => setShowAddPrescription(false)} 
+          onAdded={() => {
+            setShowAddPrescription(false)
+            reloadBill()
+          }} 
+        />
+      )}
     </div>
   )
 }

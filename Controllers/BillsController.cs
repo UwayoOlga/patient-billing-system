@@ -8,6 +8,8 @@ using System.Security.Claims;
 
 namespace HospitalBilling.Controllers
 {
+    public class AssignDoctorDto { public int? DoctorId { get; set; } }
+
     [Route("api/[controller]")]
     [ApiController]
     public class BillsController : ControllerBase
@@ -194,11 +196,12 @@ namespace HospitalBilling.Controllers
         /// <summary>
         /// Get all bills (billing staff only).
         /// </summary>
-        [Authorize(Roles = "Cashier,Admin")]
         [HttpGet]
         public async Task<IActionResult> GetAllBills()
         {
-            var bills = await _billing.GetAllBillsAsync();
+            var staffId = GetStaffId();
+            var staffRole = GetStaffRole();
+            var bills = await _billing.GetAllBillsAsync(staffId, staffRole);
             return Ok(bills);
         }
 
@@ -209,12 +212,42 @@ namespace HospitalBilling.Controllers
         [HttpGet("summary")]
         public async Task<IActionResult> GetBillsSummary()
         {
-            var bills = await _billing.GetAllBillsAsync();
+            var staffId = GetStaffId();
+            var staffRole = GetStaffRole();
+            var bills = await _billing.GetAllBillsAsync(staffId, staffRole);
             if (GetStaffRole() == StaffRole.Doctor)
             {
                 bills = bills.Select(HideInsuranceCoverage).ToList();
             }
-            return Ok(bills.Select(b => new { b.Id, b.BillNumber, b.PatientName, b.Status, b.Items }));
+            return Ok(bills.Select(b => new
+            {
+                b.Id,
+                b.PatientId,
+                b.BillNumber,
+                b.PatientName,
+                b.Status,
+                b.BalanceDue,
+                b.AssignedDoctorName,
+                b.Items
+            }));
+        }
+
+        /// <summary>
+        /// Receptionist or Admin updates the assigned doctor for a visit.
+        /// </summary>
+        [Authorize(Roles = "Receptionist,Admin")]
+        [HttpPatch("{billId}/assign-doctor")]
+        public async Task<IActionResult> AssignDoctor(int billId, [FromBody] AssignDoctorDto dto)
+        {
+            try
+            {
+                await _billing.UpdateAssignedDoctorAsync(billId, dto.DoctorId);
+                return Ok(new { message = "Doctor assigned successfully." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         /// <summary>

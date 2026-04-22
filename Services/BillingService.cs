@@ -26,8 +26,9 @@ namespace HospitalBilling.Services
                 .ToListAsync();
 
             var bills = await _db.Bills
-                .Where(b => (billIds.Contains(b.Id) || b.CreatedByStaffId == doctorId) && b.Status != BillStatus.Trash)
+                .Where(b => (billIds.Contains(b.Id) || b.CreatedByStaffId == doctorId || b.AssignedDoctorId == doctorId) && b.Status != BillStatus.Trash)
                 .Include(b => b.Patient)
+                .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
                 .OrderByDescending(b => b.CreatedAt)
@@ -45,7 +46,9 @@ namespace HospitalBilling.Services
             {
                 PatientId = dto.PatientId,
                 BillNumber = GenerateBillNumber(),
-                CreatedByStaffId = createdByStaffId
+                CreatedByStaffId = createdByStaffId,
+                Urgency = dto.Urgency,
+                AssignedDoctorId = dto.AssignedDoctorId
             };
 
             _db.Bills.Add(bill);
@@ -136,6 +139,7 @@ namespace HospitalBilling.Services
             {
                 item.Notes = resultNotes;
             }
+            item.CompletedByStaffId = staffId;
             await _db.SaveChangesAsync();
         }
 
@@ -154,6 +158,7 @@ namespace HospitalBilling.Services
 
             item.IsCompleted = false;
             item.CompletedAt = null;
+            item.CompletedByStaffId = null;
             // Optionally clear out the result notes since it's going back to pending
             item.Notes = null; 
             await _db.SaveChangesAsync();
@@ -172,9 +177,20 @@ namespace HospitalBilling.Services
             if (item.Bill.Status != BillStatus.Open)
                 throw new InvalidOperationException("Cannot dispense items for a finalized bill.");
 
+            // Stock Management
+            var category = await _db.ServiceCategories.FirstOrDefaultAsync(c => c.Name == item.Description);
+            if (category != null && category.StockQuantity.HasValue)
+            {
+                if (category.StockQuantity < quantity)
+                    throw new InvalidOperationException($"Insufficient stock for {item.Description}. Available: {category.StockQuantity}");
+                
+                category.StockQuantity -= quantity;
+            }
+
             item.Quantity = quantity;
             item.IsCompleted = true;
             item.CompletedAt = DateTime.UtcNow;
+            item.CompletedByStaffId = staffId;
             await _db.SaveChangesAsync();
         }
 
@@ -225,8 +241,18 @@ namespace HospitalBilling.Services
                 throw new InvalidOperationException("Only Open bills can be finalized.");
 
             var pendingCount = bill.Items.Count(i => !i.IsCompleted);
-            if (pendingCount > 0)
-                throw new InvalidOperationException($"Cannot finalize bill. There are {pendingCount} pending services (Lab/Pharm) that must be completed first.");
+            var pendingRxCount = await _db.Prescriptions.CountAsync(p => p.BillId == billId && p.Status == 0);
+
+            if (pendingCount > 0 || pendingRxCount > 0)
+            {
+                var msg = pendingCount > 0 
+                    ? $"There are {pendingCount} pending items (Lab/Pharm/Nursing)" 
+                    : "";
+                if (pendingRxCount > 0) 
+                    msg += (msg != "" ? " and " : "") + $"{pendingRxCount} pending prescriptions";
+                
+                throw new InvalidOperationException($"Cannot finalize bill. {msg} that must be completed/dispensed first.");
+            }
 
             bill.Status = BillStatus.Finalized;
             bill.FinalizedAt = DateTime.UtcNow;
@@ -241,6 +267,7 @@ namespace HospitalBilling.Services
         {
             var bill = await _db.Bills
                 .Include(b => b.Patient)
+                .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
                 .FirstOrDefaultAsync(b => b.Id == billId);
@@ -252,6 +279,7 @@ namespace HospitalBilling.Services
         {
             var bill = await _db.Bills
                 .Include(b => b.Patient)
+                .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
                 .FirstOrDefaultAsync(b => b.BillNumber == billNumber);
@@ -263,6 +291,7 @@ namespace HospitalBilling.Services
         {
             var bills = await _db.Bills
                 .Include(b => b.Patient)
+                .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
                 .Where(b => b.Patient.PhoneNumber == phoneNumber)
@@ -272,10 +301,75 @@ namespace HospitalBilling.Services
             return bills.Select(b => MapToDto(b, b.Patient?.FullName ?? "Unknown Patient")).ToList();
         }
 
-        public async Task<List<BillDto>> GetAllBillsAsync()
+        public async Task<List<BillDto>> GetAllBillsAsync(int staffId, StaffRole staffRole)
         {
-            var bills = await _db.Bills
+            var query = _db.Bills.AsQueryable();
+
+            // DATA ISOLATION LOGIC
+            if (staffRole == StaffRole.Doctor)
+            {
+                // Doctors see their assigned bills, bills they created, or bills where they added items
+                var billIdsByItems = await _db.BillItems
+                    .Where(i => i.AddedByStaffId == staffId)
+                    .Select(i => i.BillId)
+                    .Distinct()
+                    .ToListAsync();
+
+                query = query.Where(b => 
+                    (billIdsByItems.Contains(b.Id) || b.CreatedByStaffId == staffId || b.AssignedDoctorId == staffId) 
+                    && b.Status != BillStatus.Trash);
+            }
+            else if (staffRole == StaffRole.Nurse)
+            {
+                // Nurses see bills with nursing items (only pending ones, or completed by them)
+                var nursingBillIds = await _db.BillItems
+                    .Where(i => (i.Category == BillItemCategory.NursingService || i.Category == BillItemCategory.BedCharge || i.Category == BillItemCategory.Consumable)
+                                && (!i.IsCompleted || i.CompletedByStaffId == staffId))
+                    .Select(i => i.BillId)
+                    .Distinct()
+                    .ToListAsync();
+                
+                query = query.Where(b => nursingBillIds.Contains(b.Id) && b.Status != BillStatus.Trash);
+            }
+            else if (staffRole == StaffRole.LabTech)
+            {
+                // LabTechs see bills with lab items (only pending ones, or completed by them)
+                var labBillIds = await _db.BillItems
+                    .Where(i => (i.Category == BillItemCategory.LabTest || i.Category == BillItemCategory.PrescribedTest)
+                                && (!i.IsCompleted || i.CompletedByStaffId == staffId))
+                    .Select(i => i.BillId)
+                    .Distinct()
+                    .ToListAsync();
+                
+                query = query.Where(b => labBillIds.Contains(b.Id) && b.Status != BillStatus.Trash);
+            }
+            else if (staffRole == StaffRole.Pharmacist)
+            {
+                // Pharmacists see bills with medication items OR prescriptions (only pending ones, or completed by them)
+                var pharmBillIds = await _db.BillItems
+                    .Where(i => i.Category == BillItemCategory.Medication && (!i.IsCompleted || i.CompletedByStaffId == staffId))
+                    .Select(i => i.BillId)
+                    .Distinct()
+                    .ToListAsync();
+                
+                var rxBillIds = await _db.Prescriptions
+                    .Where(p => p.Status == 0 || p.DispensedByStaffId == staffId)
+                    .Select(p => p.BillId)
+                    .Distinct()
+                    .ToListAsync();
+
+                query = query.Where(b => (pharmBillIds.Contains(b.Id) || rxBillIds.Contains(b.Id)) && b.Status != BillStatus.Trash);
+            }
+            else if (staffRole == StaffRole.Receptionist)
+            {
+                // Receptionists only see visits they created
+                query = query.Where(b => b.CreatedByStaffId == staffId);
+            }
+            // Admin and Cashier see all (no filter)
+
+            var bills = await query
                 .Include(b => b.Patient)
+                .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
                 .OrderByDescending(b => b.CreatedAt)
@@ -303,8 +397,9 @@ namespace HospitalBilling.Services
         public async Task<List<BillDto>> GetTrashBillsForDoctorAsync(int doctorId)
         {
             var bills = await _db.Bills
-                .Where(b => b.CreatedByStaffId == doctorId && b.Status == BillStatus.Trash)
+                .Where(b => (b.CreatedByStaffId == doctorId || b.AssignedDoctorId == doctorId) && b.Status == BillStatus.Trash)
                 .Include(b => b.Patient)
+                .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
                 .OrderByDescending(b => b.CreatedAt)
@@ -341,6 +436,170 @@ namespace HospitalBilling.Services
             _db.Bills.Remove(bill);
 
             await _db.SaveChangesAsync();
+        }
+
+        public async Task RaiseItemDisputeAsync(int billItemId, string reason)
+        {
+            var item = await _db.BillItems.FindAsync(billItemId)
+                ?? throw new KeyNotFoundException("Item not found.");
+
+            item.IsDisputed = true;
+
+            var dispute = new Dispute
+            {
+                BillId = item.BillId,
+                BillItemId = billItemId,
+                Reason = reason,
+                Status = DisputeStatus.Open
+            };
+
+            _db.Disputes.Add(dispute);
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task ResolveItemDisputeAsync(int disputeId, int staffId, bool approveDispute, string notes)
+        {
+            var dispute = await _db.Disputes
+                .Include(d => d.BillItem)
+                .FirstOrDefaultAsync(d => d.Id == disputeId)
+                ?? throw new KeyNotFoundException("Dispute not found.");
+
+            dispute.Status = approveDispute ? DisputeStatus.Resolved : DisputeStatus.Rejected;
+            dispute.ResolvedAt = DateTime.UtcNow;
+            dispute.ResolvedByStaffId = staffId;
+            dispute.ResolutionNotes = notes;
+
+            if (dispute.BillItem != null)
+            {
+                if (approveDispute)
+                {
+                    // If approved, item is removed or stays "Disputed" (already excluded from total)
+                    // If it was a medication, we might want to return stock?
+                    if (dispute.BillItem.Category == BillItemCategory.Medication)
+                    {
+                        var category = await _db.ServiceCategories.FirstOrDefaultAsync(c => c.Name == dispute.BillItem.Description);
+                        if (category != null && category.StockQuantity.HasValue)
+                        {
+                            category.StockQuantity += dispute.BillItem.Quantity;
+                        }
+                    }
+                    _db.BillItems.Remove(dispute.BillItem);
+                }
+                else
+                {
+                    // If rejected, item is active again
+                    dispute.BillItem.IsDisputed = false;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task<List<Dispute>> GetAllDisputesAsync()
+        {
+            return await _db.Disputes
+                .Include(d => d.Bill)
+                .Include(d => d.BillItem)
+                .OrderByDescending(d => d.RaisedAt)
+                .ToListAsync();
+        }
+
+        public async Task UpdateAssignedDoctorAsync(int billId, int? doctorId)
+        {
+            var bill = await _db.Bills.FindAsync(billId)
+                ?? throw new KeyNotFoundException("Bill not found.");
+
+            if (bill.Status != BillStatus.Open)
+                throw new InvalidOperationException($"Can only change assigned doctor for Open visits. Current bill status is: {bill.Status}");
+
+            bill.AssignedDoctorId = doctorId;
+            await _db.SaveChangesAsync();
+        }
+        
+        // --- Prescriptions ---
+
+        public async Task<Prescription> CreatePrescriptionAsync(HospitalBilling.DTOs.CreatePrescriptionDto dto, int staffId)
+        {
+            var bill = await _db.Bills.FindAsync(dto.BillId) ?? throw new KeyNotFoundException("Bill not found");
+            var prescription = new Prescription
+            {
+                BillId = dto.BillId,
+                DrugName = dto.DrugName,
+                Dosage = dto.Dosage,
+                Frequency = dto.Frequency,
+                Duration = dto.Duration,
+                Status = 0,
+                PrescribedByStaffId = staffId,
+                PrescribedAt = DateTime.UtcNow
+            };
+            _db.Prescriptions.Add(prescription);
+            await _db.SaveChangesAsync();
+            return prescription;
+        }
+
+        public async Task<List<Prescription>> GetPrescriptionsForBillAsync(int billId)
+        {
+            return await _db.Prescriptions
+                .Include(p => p.PrescribedByStaff)
+                .Include(p => p.DispensedByStaff)
+                .Where(p => p.BillId == billId)
+                .OrderByDescending(p => p.PrescribedAt)
+                .ToListAsync();
+        }
+
+        public async Task<List<Prescription>> GetPendingPrescriptionsAsync()
+        {
+            return await _db.Prescriptions
+                .Include(p => p.Bill)
+                .ThenInclude(b => b.Patient)
+                .Include(p => p.PrescribedByStaff)
+                .Where(p => p.Status == 0)
+                .OrderBy(p => p.PrescribedAt)
+                .ToListAsync();
+        }
+
+        public async Task<BillItem> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto)
+        {
+            var prescription = await _db.Prescriptions
+                .Include(p => p.Bill)
+                .ThenInclude(b => b.Patient)
+                .FirstOrDefaultAsync(p => p.Id == prescriptionId) 
+                ?? throw new KeyNotFoundException("Prescription not found");
+
+            if (prescription.Status != 0)
+                throw new InvalidOperationException("Prescription is already dispensed or cancelled.");
+
+            var category = await _db.ServiceCategories.FindAsync(dto.ServiceCategoryId) 
+                ?? throw new KeyNotFoundException("Service category (drug) not found");
+
+            var billItem = new BillItem
+            {
+                BillId = prescription.BillId,
+                Category = BillItemCategory.Medication,
+                Description = category.Name,
+                UnitPrice = category.BasePrice,
+                Quantity = dto.Quantity,
+                InsuranceCoveragePercentage = prescription.Bill.Patient.InsuranceCoveragePercentage,
+                AddedByStaffId = staffId,
+                AddedAt = DateTime.UtcNow,
+                IsCompleted = true, // Dispensed immediately
+                CompletedAt = DateTime.UtcNow,
+                CompletedByStaffId = staffId,
+                Notes = $"Dispensed for Rx: {prescription.DrugName} {prescription.Dosage}"
+            };
+
+            _db.BillItems.Add(billItem);
+            
+            prescription.Status = 1;
+            prescription.DispensedByStaffId = staffId;
+            prescription.DispensedAt = DateTime.UtcNow;
+            
+            await _db.SaveChangesAsync();
+
+            prescription.BillItemId = billItem.Id;
+            await _db.SaveChangesAsync();
+
+            return billItem;
         }
 
         // --- Helpers ---
@@ -388,9 +647,11 @@ namespace HospitalBilling.Services
         private static BillDto MapToDto(Bill bill, string patientName) => new()
         {
             Id = bill.Id,
+            PatientId = bill.PatientId,
             BillNumber = bill.BillNumber,
             PatientName = patientName,
             Status = bill.Status.ToString(),
+            Urgency = bill.Urgency.ToString(),
             CreatedAt = bill.CreatedAt,
             FinalizedAt = bill.FinalizedAt,
             TotalAmount = bill.TotalAmount,
@@ -398,6 +659,8 @@ namespace HospitalBilling.Services
             PatientLiability = bill.PatientLiability,
             TotalPaid = bill.TotalPaid,
             BalanceDue = bill.BalanceDue,
+            AssignedDoctorId = bill.AssignedDoctorId,
+            AssignedDoctorName = bill.AssignedDoctor?.FullName,
             Items = bill.Items.Select(MapItemToDto).ToList(),
             Payments = bill.Payments.Select(p => new PaymentResponseDto
             {
@@ -422,6 +685,7 @@ namespace HospitalBilling.Services
             InsuranceAmount = item.InsuranceAmount,
             PatientAmount = item.PatientAmount,
             IsCompleted = item.IsCompleted,
+            IsDisputed = item.IsDisputed,
             AddedBy = item.AddedByStaff?.FullName ?? "Unknown",
             AddedByRole = item.AddedByStaff?.Role.ToString() ?? "Unknown",
             AddedAt = item.AddedAt,

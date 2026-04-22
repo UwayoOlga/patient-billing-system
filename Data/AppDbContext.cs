@@ -15,6 +15,7 @@ namespace HospitalBilling.Data
         public DbSet<Dispute> Disputes => Set<Dispute>();
         public DbSet<BillingServiceConfig> ServiceConfigs => Set<BillingServiceConfig>();
         public DbSet<ServiceCategory> ServiceCategories => Set<ServiceCategory>();
+        public DbSet<Prescription> Prescriptions => Set<Prescription>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -52,6 +53,12 @@ namespace HospitalBilling.Data
                 .HasForeignKey(bi => bi.AddedByStaffId)
                 .OnDelete(DeleteBehavior.NoAction);
 
+            modelBuilder.Entity<BillItem>()
+                .HasOne(bi => bi.CompletedByStaff)
+                .WithMany()
+                .HasForeignKey(bi => bi.CompletedByStaffId)
+                .OnDelete(DeleteBehavior.NoAction);
+
             // Payment -> Bill
             modelBuilder.Entity<Payment>()
                 .HasOne(p => p.Bill)
@@ -76,6 +83,26 @@ namespace HospitalBilling.Data
                 .HasOne(d => d.ResolvedByStaff)
                 .WithMany()
                 .HasForeignKey(d => d.ResolvedByStaffId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Prescription -> Bill
+            modelBuilder.Entity<Prescription>()
+                .HasOne(p => p.Bill)
+                .WithMany()
+                .HasForeignKey(p => p.BillId);
+
+            // Prescription -> PrescribedByStaff
+            modelBuilder.Entity<Prescription>()
+                .HasOne(p => p.PrescribedByStaff)
+                .WithMany()
+                .HasForeignKey(p => p.PrescribedByStaffId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Prescription -> DispensedByStaff
+            modelBuilder.Entity<Prescription>()
+                .HasOne(p => p.DispensedByStaff)
+                .WithMany()
+                .HasForeignKey(p => p.DispensedByStaffId)
                 .OnDelete(DeleteBehavior.NoAction);
 
             // Decimal precision

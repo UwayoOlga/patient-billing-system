@@ -1,5 +1,6 @@
 using HospitalBilling.DTOs;
 using HospitalBilling.Enums;
+using HospitalBilling.Models;
 
 namespace HospitalBilling.Services.Interfaces
 {
@@ -40,8 +41,8 @@ namespace HospitalBilling.Services.Interfaces
         // Patient history: all bills by phone number
         Task<List<BillDto>> GetBillsByPhoneAsync(string phoneNumber);
 
-        // Get all bills (billing staff)
-        Task<List<BillDto>> GetAllBillsAsync();
+        // Get all bills (filtered by role for data isolation)
+        Task<List<BillDto>> GetAllBillsAsync(int staffId, StaffRole staffRole);
 
         // Delete a bill (doctor or billing staff)
         Task DeleteBillAsync(int billId, int staffId, StaffRole staffRole);
@@ -54,5 +55,15 @@ namespace HospitalBilling.Services.Interfaces
 
         // Permanently delete a bill
         Task PermanentlyDeleteBillAsync(int billId, int staffId, StaffRole staffRole);
+        // Manage bill item disputes
+        Task RaiseItemDisputeAsync(int billItemId, string reason);
+        Task ResolveItemDisputeAsync(int disputeId, int staffId, bool approveDispute, string notes);
+        Task<List<Dispute>> GetAllDisputesAsync();
+        Task UpdateAssignedDoctorAsync(int billId, int? doctorId);
+        // Prescriptions
+        Task<Prescription> CreatePrescriptionAsync(HospitalBilling.DTOs.CreatePrescriptionDto dto, int staffId);
+        Task<List<Prescription>> GetPrescriptionsForBillAsync(int billId);
+        Task<List<Prescription>> GetPendingPrescriptionsAsync();
+        Task<BillItem> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto);
     }
 }

@@ -106,6 +106,7 @@ namespace HospitalBilling.Controllers
             // Patients from bills the doctor created OR added charges to
             var patientIds = await _db.Bills
                 .Where(b => b.CreatedByStaffId == staffId ||
+                            b.AssignedDoctorId == staffId ||
                             b.Items.Any(i => i.AddedByStaffId == staffId))
                 .Select(b => b.PatientId)
                 .Distinct()

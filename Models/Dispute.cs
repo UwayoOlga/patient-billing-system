@@ -1,4 +1,4 @@
-﻿using HospitalBilling.Enums;
+using HospitalBilling.Enums;
 
 namespace HospitalBilling.Models
 {
@@ -8,6 +8,8 @@ namespace HospitalBilling.Models
 
         public int BillId { get; set; }
         public Bill Bill { get; set; } = null!;
+        public int? BillItemId { get; set; }
+        public BillItem? BillItem { get; set; }
 
         public string Reason { get; set; } = string.Empty;
         public DisputeStatus Status { get; set; } = DisputeStatus.Open;

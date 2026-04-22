@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import api from '../../utils/api'
+import api from '../utils/api'
 import styles from './PaymentProcessingModal.module.css'
 
 export default function PaymentProcessingModal({ billId, onClose, onPaymentSuccess }) {
@@ -10,6 +10,19 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
   const [reference, setReference] = useState('')
   const [amountPaid, setAmountPaid] = useState(0)
   const [step, setStep] = useState('Payment') // 'Payment' | 'Receipt'
+
+  async function handleRaiseDispute(itemId) {
+    const reason = window.prompt("Reason for dispute (e.g. Patient claims service not received):")
+    if (!reason || !reason.trim()) return
+    try {
+      await api.post(`/dispute/raise/${itemId}`, JSON.stringify(reason), {
+        headers: { 'Content-Type': 'application/json' }
+      })
+      fetchBill() // refresh
+    } catch (err) {
+      alert("Failed to raise dispute")
+    }
+  }
 
   useEffect(() => {
     if (billId) fetchBill()
@@ -26,6 +39,9 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
     } finally {
       setLoading(false)
     }
+  }
+  function handlePrint() {
+    window.print()
   }
 
   async function handleConfirmPayment() {
@@ -59,10 +75,6 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
     }
   }
 
-  function handlePrint() {
-    window.print()
-  }
-
   if (loading) return null
 
   return (
@@ -77,6 +89,18 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
         </header>
 
         <div className={styles.content}>
+          {/* Printable Hospital Header (Only visible on print) */}
+          <div className={styles.printHeader} style={{ display: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '3px solid #0f172a', paddingBottom: '20px', marginBottom: '24px' }}>
+              <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
+              <div style={{ textAlign: 'left' }}>
+                <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>RWANDA DIGITAL MEDICAL CENTER</h2>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Excellence in Healthcare | Official Receipt</p>
+              </div>
+            </div>
+            <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#475569' }}>Generated on: {new Date().toLocaleString()}</p>
+          </div>
+
           <div className={styles.summaryGrid}>
             <div className={styles.summaryItem}>
               <label>Patient</label>
@@ -95,6 +119,7 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
                 <th className={styles.right}>Gross</th>
                 <th className={styles.right}>Insurance</th>
                 <th className={styles.right}>Patient</th>
+                <th className={styles.center}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -107,28 +132,41 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
                   <td className={styles.right}>{item.unitPrice.toLocaleString()}</td>
                   <td className={styles.right}>{item.insuranceAmount.toLocaleString()}</td>
                   <td className={styles.right}>{item.patientAmount.toLocaleString()}</td>
+                  <td className={styles.center}>
+                    {item.isDisputed ? (
+                      <span className={styles.disputeBadge}>Disputed</span>
+                    ) : (
+                      <button 
+                        className={styles.disputeBtn} 
+                        onClick={() => handleRaiseDispute(item.id)}
+                        title="Flag for dispute"
+                      >
+                        🚩
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="3" className={styles.totalLabel}>Total Gross Amount</td>
+                <td colSpan="4" className={styles.totalLabel}>Total Gross Amount</td>
                 <td className={styles.totalValue}>RWF {bill?.totalAmount.toLocaleString()}</td>
               </tr>
               <tr>
-                <td colSpan="3" className={styles.totalLabel}>Insurance Contribution</td>
+                <td colSpan="4" className={styles.totalLabel}>Insurance Contribution</td>
                 <td className={styles.totalValue} style={{ color: '#059669' }}>- RWF {bill?.totalInsurance.toLocaleString()}</td>
               </tr>
               <tr className={styles.liabilityRow}>
-                <td colSpan="3" className={styles.totalLabel}>Patient Liability</td>
+                <td colSpan="4" className={styles.totalLabel}>Patient Liability</td>
                 <td className={styles.totalValue}>RWF {bill?.patientLiability.toLocaleString()}</td>
               </tr>
               <tr>
-                <td colSpan="3" className={styles.totalLabel}>Previous Payments</td>
+                <td colSpan="4" className={styles.totalLabel}>Previous Payments</td>
                 <td className={styles.totalValue}>- RWF {bill?.totalPaid.toLocaleString()}</td>
               </tr>
               <tr className={styles.finalRow}>
-                <td colSpan="3" className={styles.totalLabel}>Balance Due</td>
+                <td colSpan="4" className={styles.totalLabel}>Balance Due</td>
                 <td className={styles.totalValue}>RWF {bill?.balanceDue.toLocaleString()}</td>
               </tr>
             </tfoot>
@@ -167,43 +205,77 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
           )}
 
           {step === 'Payment' && (
-            <div className={styles.paymentForm}>
-              <h3 className={styles.formTitle}>Confirm Transaction</h3>
-              <div className={styles.formRow}>
-                <div className={styles.field}>
-                  <label>Payment Method</label>
-                  <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                    <option value="Cash">Cash</option>
-                    <option value="Mobile Money">Mobile Money (Momo)</option>
-                    <option value="Card">Bank Card / Visa</option>
-                  </select>
+              <div className={styles.paymentForm}>
+                <div className={styles.formHeader}>
+                  <h3 className={styles.formTitle}>Payment Details</h3>
+                  {amountPaid !== bill?.balanceDue && (
+                    <button 
+                      className={styles.quickPayBtn}
+                      onClick={() => setAmountPaid(bill.balanceDue)}
+                    >
+                      Pay Full Amount (RWF {bill?.balanceDue.toLocaleString()})
+                    </button>
+                  )}
                 </div>
+
+                <div className={styles.formRow}>
+                  <div className={styles.field}>
+                    <label>Method</label>
+                    <select 
+                      value={paymentMethod} 
+                      onChange={e => {
+                        setPaymentMethod(e.target.value);
+                        if (e.target.value === 'Cash') setReference('CASH-' + Math.random().toString(36).substring(7).toUpperCase());
+                        else setReference('');
+                      }}
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Mobile Money">Mobile Money (Momo)</option>
+                      <option value="Bank">Bank Transfer / Card</option>
+                    </select>
+                  </div>
+                  <div className={styles.field}>
+                    <label>Amount (RWF)</label>
+                    <input 
+                      type="number" 
+                      value={amountPaid} 
+                      onChange={e => setAmountPaid(e.target.value)}
+                      max={bill?.balanceDue}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {paymentMethod === 'Mobile Money' && (
+                  <div className={styles.momoHint}>
+                    <div className={styles.qrPlaceholder}>
+                      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                      </svg>
+                      <span>Scan to Pay (Merchant Code: 123456)</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className={styles.field}>
-                  <label>Amount to Pay (RWF)</label>
+                  <label>Reference / Transaction Hash</label>
                   <input 
-                    type="number" 
-                    value={amountPaid} 
-                    onChange={e => setAmountPaid(e.target.value)}
-                    max={bill?.balanceDue}
+                    placeholder={paymentMethod === 'Cash' ? "System Auto-Generated" : "e.g. TXN-998877"} 
+                    value={reference}
+                    onChange={e => setReference(e.target.value)}
                   />
                 </div>
-              </div>
-              <div className={styles.field}>
-                <label>Reference (Optional)</label>
-                <input 
-                  placeholder="e.g. Transaction ID, Momo Code" 
-                  value={reference}
-                  onChange={e => setReference(e.target.value)}
-                />
-              </div>
 
-              <div className={styles.footer}>
-                <button className={styles.cancelBtn} onClick={onClose}>Cancel</button>
-                <button className={styles.confirmBtn} onClick={handleConfirmPayment} disabled={processing}>
-                  {processing ? 'Processing...' : `Confirm Payment: RWF ${parseInt(amountPaid).toLocaleString()}`}
-                </button>
+                <div className={styles.footer}>
+                  <button className={styles.cancelBtn} onClick={onClose}>Cancel</button>
+                  <button className={styles.confirmBtn} onClick={handleConfirmPayment} disabled={processing}>
+                    {processing ? 'Processing...' : `Pay & Finalize: RWF ${parseInt(amountPaid).toLocaleString()}`}
+                  </button>
+                </div>
               </div>
-            </div>
           )}
 
           {step === 'Receipt' && (

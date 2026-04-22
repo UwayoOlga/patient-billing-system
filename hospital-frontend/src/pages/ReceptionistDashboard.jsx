@@ -22,6 +22,9 @@ export default function ReceptionistDashboard() {
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [visitModal, setVisitModal] = useState({ isOpen: false, patientId: null, urgency: 0, assignedDoctorId: '', billId: null, isUpdate: false });
+  const [activeVisitsByPatient, setActiveVisitsByPatient] = useState({});
+  const [doctors, setDoctors] = useState([]);
   
   // Registration Form State
   const [fullName, setFullName] = useState('');
@@ -31,16 +34,44 @@ export default function ReceptionistDashboard() {
   const [insuranceNum, setInsuranceNum] = useState('');
 
   useEffect(() => {
-    fetchPatients();
+    fetchDashboardData();
   }, []);
 
-  const fetchPatients = async () => {
+  const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/patient');
-      setPatients(res.data);
+      const [patientsRes, billsRes, staffRes] = await Promise.all([
+        api.get('/patient'),
+        api.get('/bills/summary'),
+        api.get('/staff')
+      ]);
+
+      setPatients(patientsRes.data);
+      setDoctors(staffRes.data.filter(s => s.role === 0 && s.isActive)); // 0 = Doctor in StaffRole enum
+
+      const activeByPatient = {};
+      for (const bill of billsRes.data || []) {
+        if (!bill?.patientId) continue;
+        // Keep visit marked active until fully paid OR medication is prescribed.
+        // User requested: "visible on card that the visit is open, until they are prescribed with medication"
+        const hasMedication = bill.items?.some(i => i.category === 'Medication');
+
+        if (bill.status !== 'Paid' && bill.status !== 'Trash' && !hasMedication) {
+          const existing = activeByPatient[bill.patientId];
+          if (!existing || bill.id > existing.id) {
+            activeByPatient[bill.patientId] = {
+              id: bill.id,
+              billNumber: bill.billNumber,
+              status: bill.status,
+              assignedDoctor: bill.assignedDoctorName,
+              balanceDue: Number(bill.balanceDue ?? 0)
+            };
+          }
+        }
+      }
+      setActiveVisitsByPatient(activeByPatient);
     } catch (err) {
-      console.error('Failed to fetch patients', err);
+      console.error('Failed to fetch receptionist dashboard data', err);
     } finally {
       setLoading(false);
     }
@@ -67,7 +98,7 @@ export default function ReceptionistDashboard() {
       }
 
       setShowModal(false);
-      fetchPatients();
+      await fetchDashboardData();
       // Reset form
       setEditingId(null);
       setFullName('');
@@ -104,13 +135,25 @@ export default function ReceptionistDashboard() {
     setShowModal(true);
   };
 
-  const handleOpenVisit = async (patientId) => {
-    if (!window.confirm("Open a new visit for this patient?")) return;
+  const handleOpenVisit = async () => {
     try {
-      const res = await api.post('/bills', { patientId });
-      alert(`Visit opened successfully! Reference: ${res.data.bill.billNumber}\n\nNote: This visit remains open until midnight or until finalized by billing. The patient should proceed directly to the Doctor's queue.`);
+      if (visitModal.isUpdate) {
+        await api.patch(`/bills/${visitModal.billId}/assign-doctor`, { 
+          doctorId: visitModal.assignedDoctorId ? parseInt(visitModal.assignedDoctorId) : null 
+        });
+        alert('Doctor assigned successfully!');
+      } else {
+        const res = await api.post('/bills', { 
+          patientId: visitModal.patientId, 
+          urgency: parseInt(visitModal.urgency),
+          assignedDoctorId: visitModal.assignedDoctorId ? parseInt(visitModal.assignedDoctorId) : null
+        });
+        alert(`Visit opened successfully! Reference: ${res.data.bill.billNumber}\n\nPriority: ${res.data.bill.urgency}\n\nNote: The patient has been checked into the clinical queue.`);
+      }
+      setVisitModal({ isOpen: false, patientId: null, urgency: 0, assignedDoctorId: '', billId: null, isUpdate: false });
+      await fetchDashboardData();
     } catch (err) {
-      alert('Failed to open visit');
+      alert(err.response?.data?.message || 'Failed to process assignment');
     }
   };
 
@@ -190,6 +233,34 @@ export default function ReceptionistDashboard() {
               <div className={styles.patientGrid}>
                 {filteredPatients.map(patient => (
                   <div key={patient.id} className={styles.patientCard}>
+                    {activeVisitsByPatient[patient.id] && (
+                      <div className={styles.openVisitBadge}>
+                        <div className={styles.pulse} />
+                        <div style={{flex: 1}}>
+                          Visit Open: {activeVisitsByPatient[patient.id].billNumber}
+                          {activeVisitsByPatient[patient.id].assignedDoctor ? (
+                            <div className={styles.assignedDoctor}>
+                              Dr. {activeVisitsByPatient[patient.id].assignedDoctor}
+                            </div>
+                          ) : (
+                            <div className={styles.unassignedDoctor}>Unassigned</div>
+                          )}
+                        </div>
+                        <button 
+                          className={styles.assignSmallBtn}
+                          onClick={() => setVisitModal({ 
+                            isOpen: true, 
+                            patientId: patient.id, 
+                            billId: activeVisitsByPatient[patient.id].id,
+                            urgency: 0, // not used in update
+                            assignedDoctorId: '', 
+                            isUpdate: true 
+                          })}
+                        >
+                          {activeVisitsByPatient[patient.id].assignedDoctor ? 'Change' : 'Assign'}
+                        </button>
+                      </div>
+                    )}
                     <div className={styles.cardHeader}>
                       <div className={styles.patientAvatar}>
                         {patient.fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -218,10 +289,11 @@ export default function ReceptionistDashboard() {
                     <div className={styles.cardActions} style={{display: 'flex', gap: '8px'}}>
                       <button 
                         className={styles.btnSecondary} 
-                        onClick={() => handleOpenVisit(patient.id)}
+                        disabled={!!activeVisitsByPatient[patient.id]}
+                        onClick={() => setVisitModal({ isOpen: true, patientId: patient.id, urgency: 0, assignedDoctorId: '', billId: null, isUpdate: false })}
                         style={{flex: 1}}
                       >
-                        Open Visit
+                        {activeVisitsByPatient[patient.id] ? 'Active Order' : 'Check-in (New Visit)'}
                       </button>
                       <button 
                         onClick={() => openAppModal(patient)}
@@ -323,6 +395,58 @@ export default function ReceptionistDashboard() {
                 <button type="submit" className={styles.btnPrimary}>{editingId ? 'Save Changes' : 'Complete Registration'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Visit Triage Modal */}
+      {visitModal.isOpen && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalContent} style={{maxWidth: '400px'}}>
+            <div className={styles.modalHeader}>
+              <h2>{visitModal.isUpdate ? 'Assign Doctor' : 'Clinical Check-in'}</h2>
+              <p>{visitModal.isUpdate ? 'Update the doctor assigned to this visit.' : 'Assign triage priority for this visit.'}</p>
+            </div>
+            {!visitModal.isUpdate && (
+              <div className={styles.formGroup}>
+                <label>Triage Priority</label>
+                <select 
+                  value={visitModal.urgency} 
+                  onChange={e => setVisitModal({...visitModal, urgency: e.target.value})}
+                  style={{width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px'}}
+                >
+                  <option value="0">Normal (Routine Checkup)</option>
+                  <option value="1">Urgent (Acute Symptoms)</option>
+                  <option value="2">Emergency (Immediate Care)</option>
+                </select>
+              </div>
+            )}
+
+            <div className={styles.formGroup}>
+              <label>Assign Doctor</label>
+              <select 
+                value={visitModal.assignedDoctorId} 
+                onChange={e => setVisitModal({...visitModal, assignedDoctorId: e.target.value})}
+                style={{width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1'}}
+              >
+                <option value="">-- Select Doctor (Optional) --</option>
+                {doctors.map(doc => (
+                  <option key={doc.id} value={doc.id}>Dr. {doc.fullName}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className={styles.modalActions}>
+              <button className={styles.btnCancel} onClick={() => setVisitModal({ isOpen: false, patientId: null, urgency: 0, assignedDoctorId: '', billId: null, isUpdate: false })}>Cancel</button>
+              <button 
+                className={styles.btnPrimary} 
+                onClick={handleOpenVisit}
+                style={{
+                  background: !visitModal.isUpdate && visitModal.urgency == "2" ? "#dc2626" : !visitModal.isUpdate && visitModal.urgency == "1" ? "#f59e0b" : "#3b82f6"
+                }}
+              >
+                {visitModal.isUpdate ? 'Update Assignment' : 'Confirm & Open Visit'}
+              </button>
+            </div>
           </div>
         </div>
       )}

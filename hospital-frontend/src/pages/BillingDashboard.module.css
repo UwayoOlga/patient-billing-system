@@ -51,10 +51,14 @@
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
   transition: all 0.2s;
 }
 
-.navItem:hover { color: #fff; background: rgba(255,255,255,0.05); }
+.navItem:hover { color: #fff; background: rgba(255,255,255,0.07); }
 .navItem.active { background: var(--primary-billing); color: #fff; box-shadow: var(--shadow-sm); }
 
 .logoutBtn {
@@ -110,7 +114,7 @@
 .avatar {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 50%;
   background: var(--primary-billing);
   color: #fff;
   display: flex;

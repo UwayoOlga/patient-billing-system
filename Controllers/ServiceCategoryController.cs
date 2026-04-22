@@ -45,6 +45,7 @@ namespace HospitalBilling.Controllers
             category.ResponsibleRole = dto.ResponsibleRole;
             category.Description = dto.Description;
             category.IsActive = dto.IsActive;
+            category.StockQuantity = dto.StockQuantity;
 
             await _db.SaveChangesAsync();
             return Ok(category);

@@ -15,10 +15,10 @@ export default function BillingDashboard() {
     window.addEventListener('storage', handleStorage)
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
+
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All')
-
-  const [view, setView] = useState('Dashboard') // 'Dashboard' | 'Reports'
+  const [activeTab, setActiveTab] = useState('dashboard') // Match other dashboards
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedBillId, setSelectedBillId] = useState(null)
@@ -38,16 +38,6 @@ export default function BillingDashboard() {
     }
   }
 
-  async function handleFinalize(billId) {
-    if (!window.confirm('Are you sure you want to finalize this bill? It will be locked for editing.')) return
-    try {
-      await api.patch(`/bills/${billId}/finalize`)
-      fetchBills()
-    } catch (err) {
-      alert(err.response?.data?.message ?? 'Failed to finalize bill.')
-    }
-  }
-
   function handleLogout() {
     logout()
     navigate('/login')
@@ -60,6 +50,7 @@ export default function BillingDashboard() {
     return matchesFilter && matchesSearch
   })
 
+  // Stats calculation
   const totalOutstanding = bills.reduce((acc, b) => acc + (b.status !== 'Paid' ? b.balanceDue : 0), 0)
   const openCount = bills.filter(b => b.status === 'Open').length
   const finalizedCount = bills.filter(b => b.status === 'Finalized').length
@@ -75,6 +66,21 @@ export default function BillingDashboard() {
     })
   })
 
+  const navItems = [
+    {
+      key: 'dashboard', label: 'Dashboard',
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    },
+    {
+      key: 'reports', label: 'Daily Reports',
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+    },
+    {
+      key: 'profile', label: 'My Profile',
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    },
+  ]
+
   return (
     <div className={styles.page}>
       {/* Mobile Menu Trigger */}
@@ -86,24 +92,25 @@ export default function BillingDashboard() {
 
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarLogo}>
-          <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          <svg className={styles.logoIcon} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         </div>
         <nav className={styles.nav}>
-          <a className={`${styles.navItem} ${view === 'Dashboard' ? styles.active : ''}`} onClick={() => { setView('Dashboard'); setMobileMenuOpen(false); }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-            Dashboard
-          </a>
-          <a className={`${styles.navItem} ${view === 'Reports' ? styles.active : ''}`} onClick={() => { setView('Reports'); setMobileMenuOpen(false); }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
-            Daily Reports
-          </a>
-          <a className={`${styles.navItem} ${view === 'Profile' ? styles.active : ''}`} onClick={() => { setView('Profile'); setMobileMenuOpen(false); }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            My Profile
-          </a>
+          {navItems.map(item => (
+            <button
+              key={item.key}
+              className={`${styles.navItem} ${activeTab === item.key ? styles.active : ''}`}
+              onClick={() => { 
+                setActiveTab(item.key); 
+                setMobileMenuOpen(false); 
+              }}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
         </nav>
         <button className={styles.logoutBtn} onClick={handleLogout}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           Logout
         </button>
       </aside>
@@ -111,19 +118,22 @@ export default function BillingDashboard() {
       {/* Main */}
       <main className={styles.main}>
         <header className={styles.header}>
-          <h2 className={styles.moduleTitle}>
-            Welcome, {user?.name ?? 'Billing Staff'}
-          </h2>
+          <div>
+            <h2 className={styles.moduleTitle}>
+              Welcome, {user?.name ?? 'Billing Staff'}
+            </h2>
+          </div>
           <div className={styles.userInfo}>
             <div className={styles.avatar}>{user?.name?.charAt(0) ?? 'B'}</div>
             <div>
               <div className={styles.userName}>{user?.name ?? 'Billing Staff'}</div>
               <div className={styles.userRole}>Revenue Office</div>
             </div>
+            <span className={styles.activeBadge}>Active</span>
           </div>
         </header>
 
-        {view === 'Profile' ? <ProfileTab /> : view === 'Dashboard' && (
+        {activeTab === 'profile' ? <ProfileTab /> : activeTab === 'dashboard' && (
           <>
             {/* Stats */}
             <div className={styles.statsRow}>
@@ -222,7 +232,7 @@ export default function BillingDashboard() {
           </>
         )}
 
-        {view === 'Reports' && (
+        {activeTab === 'reports' && (
           <div className={styles.reportsPage}>
             <div className={styles.statsRow}>
               <div className={styles.statCard}>

@@ -105,40 +105,93 @@ export default function LabDashboard() {
       <html>
         <head>
           <title>Lab Report - ${test.description}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
           <style>
-            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; }
-            .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; }
-            .hospital-name { font-size: 24px; font-weight: bold; color: #059669; }
-            .report-title { font-size: 18px; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
-            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
-            .meta-item { font-size: 14px; }
-            .meta-label { color: #64748b; font-weight: 600; }
-            .result-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 30px; border-radius: 8px; }
-            .result-label { font-size: 16px; font-weight: bold; margin-bottom: 15px; display: block; }
-            .result-text { font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
-            .footer { margin-top: 50px; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #0f172a; line-height: 1.5; }
+            .header { display: flex; align-items: center; gap: 20px; border-bottom: 3px solid #0f172a; padding-bottom: 24px; margin-bottom: 32px; }
+            .logo-placeholder { background: #0f172a; color: white; width: 60px; height: 60px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: bold; }
+            .hospital-info h1 { margin: 0; font-size: 28px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
+            .hospital-info p { margin: 4px 0 0; color: #64748b; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+            
+            .report-title { font-size: 20px; font-weight: 800; text-transform: uppercase; margin-bottom: 32px; color: #1e293b; display: flex; justify-content: space-between; align-items: center; }
+            .badge { background: #f1f5f9; padding: 4px 12px; border-radius: 6px; font-size: 12px; }
+
+            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px; background: #f8fafc; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; }
+            .meta-item { display: flex; flex-direction: column; gap: 4px; }
+            .meta-label { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+            .meta-value { font-size: 15px; font-weight: 700; color: #1e293b; }
+
+            .result-container { margin-bottom: 48px; }
+            .result-header { font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; }
+            .result-content { font-size: 16px; white-space: pre-wrap; padding: 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; min-height: 200px; }
+
+            .footer { margin-top: auto; padding-top: 32px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 12px; }
+            .footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+            .signature-space { margin-top: 40px; border-top: 1px solid #94a3b8; width: 200px; padding-top: 8px; font-weight: 700; }
+            
+            @media print {
+              body { padding: 0; }
+              .meta-grid { background: #fff !important; border: 1px solid #000; }
+            }
           </style>
         </head>
         <body>
           <div class="header">
-            <div class="hospital-name">🏥 RWANDA DIGITAL HEALTHCARE</div>
-            <div class="report-title">Official Laboratory Investigation Report</div>
+            <div class="logo-placeholder">H</div>
+            <div class="hospital-info">
+              <h1>RWANDA DIGITAL MEDICAL CENTER</h1>
+              <p>Excellence in Healthcare | Kigali, Rwanda</p>
+            </div>
           </div>
+
+          <div class="report-title">
+            Laboratory Investigation Report
+            <span class="badge">Official Document</span>
+          </div>
+
           <div class="meta-grid">
-            <div class="meta-item"><span class="meta-label">PATIENT:</span> ${visit?.patientName || test?.patientName}</div>
-            <div class="meta-item"><span class="meta-label">BILL ID:</span> ${visit?.billNumber || test?.billNumber}</div>
-            <div class="meta-item"><span class="meta-label">INVESTIGATION:</span> ${test.description}</div>
-            <div class="meta-item"><span class="meta-label">DATE:</span> ${new Date().toLocaleDateString()}</div>
+            <div class="meta-item">
+              <span class="meta-label">Patient Name</span>
+              <span class="meta-value">${visit?.patientName || test?.patientName}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Bill / Visit ID</span>
+              <span class="meta-value">${visit?.billNumber || test?.billNumber}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Investigation Type</span>
+              <span class="meta-value">${test.description}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date Generated</span>
+              <span class="meta-value">${new Date().toLocaleString()}</span>
+            </div>
           </div>
-          <div class="result-box">
-            <span class="result-label">CLINICAL FINDINGS & RESULTS:</span>
-            <div class="result-text">${test.notes || 'No results recorded.'}</div>
+
+          <div class="result-container">
+            <div class="result-header">CLINICAL FINDINGS & RESULTS</div>
+            <div class="result-content">${test.notes || 'No clinical findings recorded.'}</div>
           </div>
+
           <div class="footer">
-            Computer generated report. Validated by Laboratory Technician: ${user?.name || 'Authorized Staff'}<br>
-            Rwanda Digital Healthcare - Quality Clinical Services
+            <div class="footer-grid">
+              <div>
+                <p><strong>Disclaimer:</strong> This report is intended for medical use only. Results should be interpreted by a qualified medical professional in conjunction with clinical symptoms.</p>
+                <p style="margin-top: 8px;">Hospital ID: RDMC-LAB-${Math.floor(Math.random() * 90000) + 10000}</p>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                <div class="signature-space">Authorized Laboratory Technician</div>
+                <p style="margin-top: 4px; font-size: 11px;">${user?.name || 'System Authorized'}</p>
+              </div>
+            </div>
           </div>
-          <script>window.print();</script>
+
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
         </body>
       </html>
     `;

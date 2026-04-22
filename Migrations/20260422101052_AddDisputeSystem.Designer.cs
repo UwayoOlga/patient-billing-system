@@ -4,6 +4,7 @@ using HospitalBilling.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HospitalBilling.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260422101052_AddDisputeSystem")]
+    partial class AddDisputeSystem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -97,9 +100,6 @@ namespace HospitalBilling.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("CompletedByStaffId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -128,8 +128,6 @@ namespace HospitalBilling.Migrations
                     b.HasIndex("AddedByStaffId");
 
                     b.HasIndex("BillId");
-
-                    b.HasIndex("CompletedByStaffId");
 
                     b.ToTable("BillItems");
                 });
@@ -285,68 +283,6 @@ namespace HospitalBilling.Migrations
                     b.ToTable("Payments");
                 });
 
-            modelBuilder.Entity("HospitalBilling.Models.Prescription", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BillId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("BillItemId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("DispensedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DispensedByStaffId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Dosage")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("DrugName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Duration")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Frequency")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime>("PrescribedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("PrescribedByStaffId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BillId");
-
-                    b.HasIndex("BillItemId");
-
-                    b.HasIndex("DispensedByStaffId");
-
-                    b.HasIndex("PrescribedByStaffId");
-
-                    b.ToTable("Prescriptions");
-                });
-
             modelBuilder.Entity("HospitalBilling.Models.ServiceCategory", b =>
                 {
                     b.Property<int>("Id")
@@ -465,16 +401,9 @@ namespace HospitalBilling.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("HospitalBilling.Models.Staff", "CompletedByStaff")
-                        .WithMany()
-                        .HasForeignKey("CompletedByStaffId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.Navigation("AddedByStaff");
 
                     b.Navigation("Bill");
-
-                    b.Navigation("CompletedByStaff");
                 });
 
             modelBuilder.Entity("HospitalBilling.Models.Dispute", b =>
@@ -517,38 +446,6 @@ namespace HospitalBilling.Migrations
                     b.Navigation("Bill");
 
                     b.Navigation("ConfirmedByStaff");
-                });
-
-            modelBuilder.Entity("HospitalBilling.Models.Prescription", b =>
-                {
-                    b.HasOne("HospitalBilling.Models.Bill", "Bill")
-                        .WithMany()
-                        .HasForeignKey("BillId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("HospitalBilling.Models.BillItem", "BillItem")
-                        .WithMany()
-                        .HasForeignKey("BillItemId");
-
-                    b.HasOne("HospitalBilling.Models.Staff", "DispensedByStaff")
-                        .WithMany()
-                        .HasForeignKey("DispensedByStaffId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("HospitalBilling.Models.Staff", "PrescribedByStaff")
-                        .WithMany()
-                        .HasForeignKey("PrescribedByStaffId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("Bill");
-
-                    b.Navigation("BillItem");
-
-                    b.Navigation("DispensedByStaff");
-
-                    b.Navigation("PrescribedByStaff");
                 });
 
             modelBuilder.Entity("HospitalBilling.Models.Bill", b =>

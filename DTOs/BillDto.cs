@@ -14,6 +14,7 @@ namespace HospitalBilling.DTOs
         public decimal InsuranceAmount { get; set; }
         public decimal PatientAmount { get; set; }
         public bool IsCompleted { get; set; }
+        public bool IsDisputed { get; set; }
         public string AddedBy { get; set; } = string.Empty;
         public string AddedByRole { get; set; } = string.Empty;
         public DateTime AddedAt { get; set; }
@@ -24,9 +25,11 @@ namespace HospitalBilling.DTOs
     public class BillDto
     {
         public int Id { get; set; }
+        public int PatientId { get; set; }
         public string BillNumber { get; set; } = string.Empty;
         public string PatientName { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public string Urgency { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public DateTime? FinalizedAt { get; set; }
         public decimal TotalAmount { get; set; }
@@ -34,6 +37,8 @@ namespace HospitalBilling.DTOs
         public decimal PatientLiability { get; set; }
         public decimal TotalPaid { get; set; }
         public decimal BalanceDue { get; set; }
+        public int? AssignedDoctorId { get; set; }
+        public string? AssignedDoctorName { get; set; }
         public List<BillItemDto> Items { get; set; } = new();
         public List<PaymentResponseDto> Payments { get; set; } = new();
     }
@@ -41,6 +46,8 @@ namespace HospitalBilling.DTOs
     public class CreateBillDto
     {
         public int PatientId { get; set; }
+        public UrgencyLevel Urgency { get; set; } = UrgencyLevel.Normal;
+        public int? AssignedDoctorId { get; set; }
     }
 
     public class PatientBillAccessDto

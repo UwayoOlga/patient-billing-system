@@ -16,10 +16,13 @@ namespace HospitalBilling.Models
         public string Description { get; set; } = string.Empty;
         public decimal UnitPrice { get; set; }
         public int Quantity { get; set; } = 1;
+        public bool IsDisputed { get; set; } = false;
 
         // For lab tests: marks the test as completed/billable
         public bool IsCompleted { get; set; } = true;
         public DateTime? CompletedAt { get; set; }
+        public int? CompletedByStaffId { get; set; }
+        public Staff? CompletedByStaff { get; set; }
 
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;
         public string? Notes { get; set; }

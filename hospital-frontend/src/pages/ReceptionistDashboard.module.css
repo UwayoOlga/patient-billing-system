@@ -198,6 +198,71 @@
   gap: 16px;
 }
 
+.openVisitBadge {
+  align-self: flex-start;
+  background: #f0f9ff;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.unassignedDoctor {
+  font-size: 10px;
+  color: #ef4444;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.assignSmallBtn {
+  background: #fff;
+  border: 1px solid #0ea5e9;
+  color: #0ea5e9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.assignSmallBtn:hover {
+  background: #0ea5e9;
+  color: #fff;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  background: #0ea5e9;
+  border-radius: 50%;
+  box-shadow: 0 0 0 rgba(14, 165, 233, 0.4);
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(14, 165, 233, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); }
+}
+
+.assignedDoctor {
+  font-size: 10px;
+  color: #0c4a6e;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
 .patientCard:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
@@ -279,6 +344,11 @@
 }
 
 .btnSecondary:hover { background: #dbeafe; }
+.btnSecondary:disabled {
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
+}
 
 /* ─── Modal ─── */
 .modalOverlay {

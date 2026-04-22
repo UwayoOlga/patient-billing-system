@@ -25,7 +25,8 @@ export default function AdminDashboard() {
     window.addEventListener('storage', handleStorage)
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
-  const [view, setView] = useState('Staff') // 'Staff' | 'Activity' | 'Pricing' | 'Finances' | 'Reports'
+
+  const [activeTab, setActiveTab] = useState('staff') // Consistent state naming
   const [staffList, setStaffList] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -37,6 +38,7 @@ export default function AdminDashboard() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState(null)
   const [categoryForm, setCategoryForm] = useState({ name: '', basePrice: 0, description: '', isActive: true, responsibleRole: 0 })
+  const [disputes, setDisputes] = useState([])
 
   // Activity State
   const [stats, setStats] = useState({ totalRevenue: 0, todaysBills: 0, totalPatients: 0, pendingDisputes: 0 })
@@ -50,11 +52,12 @@ export default function AdminDashboard() {
   const [formData, setFormData] = useState({ fullName: '', email: '', phoneNumber: '', password: '', role: 0 })
 
   useEffect(() => {
-    if (view === 'Staff') fetchStaff()
-    if (view === 'Pricing') fetchCategories()
-    if (view === 'Activity') fetchActivity()
-    if (view === 'Finances') fetchFinanceData()
-  }, [view])
+    if (activeTab === 'staff') fetchStaff()
+    if (activeTab === 'pricing') fetchCategories()
+    if (activeTab === 'activity') fetchActivity()
+    if (activeTab === 'finances') fetchFinanceData()
+    if (activeTab === 'disputes') fetchDisputes()
+  }, [activeTab])
 
   async function fetchStaff() {
     setLoading(true)
@@ -141,6 +144,23 @@ export default function AdminDashboard() {
     } finally { setLoading(false) }
   }
 
+  async function fetchDisputes() {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/dispute')
+      setDisputes(data)
+    } finally { setLoading(false) }
+  }
+
+  async function resolveDispute(id, approve) {
+    const notes = window.prompt(`Resolution Notes (${approve ? 'Approval' : 'Rejection'}):`)
+    if (notes === null) return
+    try {
+      await api.patch(`/dispute/resolve/${id}`, { approve, notes })
+      fetchDisputes()
+    } catch { alert('Failed to resolve dispute') }
+  }
+
   async function handleCategorySubmit(e) {
     e.preventDefault()
     try {
@@ -157,7 +177,14 @@ export default function AdminDashboard() {
 
   function openEditCategory(c) {
     setEditingCategory(c)
-    setCategoryForm({ name: c.name, basePrice: c.basePrice, description: c.description || '', isActive: c.isActive, responsibleRole: c.responsibleRole })
+    setCategoryForm({ 
+      name: c.name, 
+      basePrice: c.basePrice, 
+      description: c.description || '', 
+      isActive: c.isActive, 
+      responsibleRole: c.responsibleRole,
+      stockQuantity: c.stockQuantity
+    })
     setShowCategoryModal(true)
   }
 
@@ -195,6 +222,16 @@ export default function AdminDashboard() {
     } finally { setLoading(false) }
   }
 
+  const navItems = [
+    { key: 'staff', label: 'Manage Staff', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> },
+    { key: 'activity', label: 'System Activity', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg> },
+    { key: 'pricing', label: 'Billing Config', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> },
+    { key: 'finances', label: 'Finances', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg> },
+    { key: 'disputes', label: 'Disputes', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> },
+    { key: 'reports', label: 'Insights', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg> },
+    { key: 'profile', label: 'My Profile', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
+  ]
+
   return (
     <div className={styles.adminPage}>
       {/* Mobile Menu Trigger */}
@@ -207,33 +244,22 @@ export default function AdminDashboard() {
       {/* Sidebar */}
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarHeader}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+          <svg className={styles.logoIcon} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
         </div>
         <nav className={styles.nav}>
-          <div className={`${styles.navItem} ${view === 'Staff' ? styles.activeNavItem : ''}`} onClick={() => { setView('Staff'); setMobileMenuOpen(false); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-            Manage Staff
-          </div>
-          <div className={`${styles.navItem} ${view === 'Activity' ? styles.activeNavItem : ''}`} onClick={() => { setView('Activity'); setMobileMenuOpen(false); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-            System Activity
-          </div>
-          <div className={`${styles.navItem} ${view === 'Pricing' ? styles.activeNavItem : ''}`} onClick={() => { setView('Pricing'); setMobileMenuOpen(false); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-            Billing Config
-          </div>
-          <div className={`${styles.navItem} ${view === 'Finances' ? styles.activeNavItem : ''}`} onClick={() => { setView('Finances'); setMobileMenuOpen(false); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-            Finances
-          </div>
-          <div className={`${styles.navItem} ${view === 'Reports' ? styles.activeNavItem : ''}`} onClick={() => { setView('Reports'); setMobileMenuOpen(false); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
-            Insights & Reports
-          </div>
-          <div className={`${styles.navItem} ${view === 'Profile' ? styles.activeNavItem : ''}`} onClick={() => { setView('Profile'); setMobileMenuOpen(false); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            My Profile
-          </div>
+          {navItems.map(item => (
+            <button
+              key={item.key}
+              className={`${styles.navItem} ${activeTab === item.key ? styles.active : ''}`}
+              onClick={() => { 
+                setActiveTab(item.key); 
+                setMobileMenuOpen(false); 
+              }}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
         </nav>
         <button className={styles.logoutBtn} onClick={handleLogout}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -243,11 +269,29 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className={styles.main}>
-        {view === 'Profile' ? <ProfileTab /> : view === 'Reports' ? <ReportsTab /> : (
+        <header className={styles.header}>
+          <div>
+            <h2 className={styles.moduleTitle}>
+              Welcome, {user?.name || 'Admin'}
+            </h2>
+          </div>
+          <div className={styles.userInfo}>
+            <div className={styles.avatar}>{user?.name?.charAt(0) || 'A'}</div>
+            <div>
+              <div className={styles.userName}>{user?.name || 'Admin'}</div>
+              <div className={styles.userRole}>System Control</div>
+            </div>
+            <span className={styles.activeBadge}>Active</span>
+          </div>
+        </header>
+
+        {activeTab === 'profile' ? <ProfileTab /> : activeTab === 'reports' ? <ReportsTab /> : (
           <>
-            <div className={styles.header}>
-              <h2>Welcome, {user?.name || 'Admin'} - {view === 'Staff' ? 'Staff Directory' : view}</h2>
-              {view === 'Staff' && (
+            <div className={styles.subHeader}>
+              <h3 className={styles.viewTitle}>
+                {activeTab === 'staff' ? 'Staff Directory' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+              </h3>
+              {activeTab === 'staff' && (
                 <button className={styles.primaryBtn} onClick={() => setShowAddModal(true)}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                   Add Staff Member
@@ -255,7 +299,7 @@ export default function AdminDashboard() {
               )}
             </div>
 
-        {view === 'Staff' && (
+        {activeTab === 'staff' && (
           <>
             <div className={styles.statsGrid}>
               <div className={styles.statCard}>
@@ -290,7 +334,7 @@ export default function AdminDashboard() {
                       <td>{s.email}</td>
                       <td>{ROLE_MAP[s.role] || 'Unknown'}</td>
                       <td>
-                        <span className={`${styles.roleBadge} ${s.isActive ? styles.activeBadge : styles.inactiveBadge}`}>
+                        <span className={`${styles.statusBadge} ${s.isActive ? styles.activeStatus : styles.inactiveStatus}`}>
                           {s.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -298,7 +342,7 @@ export default function AdminDashboard() {
                         <button className={styles.editBtn} onClick={() => openEdit(s)}>
                           Edit
                         </button>
-                        <button className={`${styles.editBtn} ${s.isActive ? styles.textRed : styles.textGreen}`} onClick={() => toggleStaffStatus(s)}>
+                        <button className={`${styles.statusToggleBtn} ${s.isActive ? styles.textRed : styles.textGreen}`} onClick={() => toggleStaffStatus(s)}>
                           {s.isActive ? 'Deactivate' : 'Activate'}
                         </button>
                         <button className={styles.deleteBtn} onClick={() => handlePermanentDelete(s)}>
@@ -314,7 +358,7 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {view === 'Activity' && (
+        {activeTab === 'activity' && (
           <>
             <div className={styles.statsGrid}>
               <div className={styles.statCard}>
@@ -363,10 +407,10 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {view === 'Pricing' && (
+        {activeTab === 'pricing' && (
           <>
-            <div className={styles.header}>
-              <h2>Service Categories & Pricing</h2>
+            <div className={styles.subHeader}>
+              <h3 className={styles.viewTitle}>Service Categories & Pricing</h3>
               <button className={styles.primaryBtn} onClick={() => { setEditingCategory(null); setCategoryForm({name:'', basePrice:0, description:'', isActive:true}); setShowCategoryModal(true); }}>
                 Add New Category
               </button>
@@ -378,7 +422,7 @@ export default function AdminDashboard() {
                     <th>Category Name</th>
                     <th>Responsible Role</th>
                     <th>Base Price (RWF)</th>
-                    <th>Description</th>
+                    <th>Stock</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -388,16 +432,27 @@ export default function AdminDashboard() {
                     <tr key={c.id}>
                       <td style={{fontWeight: 700}}>{c.name}</td>
                       <td>
-                        <span className={styles.roleBadge} style={{background: '#f1f5f9'}}>
+                        <span className={styles.roleBadge} style={{background: '#f1f5f9', color: '#475569'}}>
                           {ROLE_MAP[c.responsibleRole]}
                         </span>
                       </td>
                       <td style={{color: '#2563eb', fontWeight: 600}}>
                         {c.basePrice.toLocaleString()}
                       </td>
-                      <td>{c.description || '--'}</td>
                       <td>
-                        <span className={`${styles.roleBadge} ${c.isActive ? styles.activeBadge : styles.inactiveBadge}`}>
+                        {c.stockQuantity !== null ? (
+                          <span style={{ 
+                            fontWeight: 700, 
+                            color: c.stockQuantity < 10 ? '#dc2626' : '#166534' 
+                          }}>
+                            {c.stockQuantity} {c.stockQuantity < 10 && '⚠️'}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>N/A</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`${styles.statusBadge} ${c.isActive ? styles.activeStatus : styles.inactiveStatus}`}>
                           {c.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -408,14 +463,14 @@ export default function AdminDashboard() {
                     </tr>
                   ))}
                   {!loading && categories.length === 0 && (
-                    <tr><td colSpan="5" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>No categories defined. Add one to start setting prices.</td></tr>
+                    <tr><td colSpan="6" style={{textAlign:'center', padding:'40px', color:'#64748b'}}>No categories defined. Add one to start setting prices.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </>
         )}
-        {view === 'Finances' && (
+        {activeTab === 'finances' && (
           <>
             <div className={styles.statsGrid}>
               <div className={styles.statCard}>
@@ -428,7 +483,7 @@ export default function AdminDashboard() {
               </div>
               <div className={styles.statCard}>
                 <div className={styles.statLabel}>Active Receivables</div>
-                <div className={styles.statValue}>RWF {debts.reduce((acc, d) => acc + (d.TotalAmount - d.TotalPaid), 0).toLocaleString()}</div>
+                <div className={styles.statValue}>RWF {debts.reduce((acc, d) => acc + (d.totalAmount - d.totalPaid), 0).toLocaleString()}</div>
               </div>
             </div>
 
@@ -437,43 +492,30 @@ export default function AdminDashboard() {
                 <div className={styles.cardHeader}><h3>Global Payment Ledger</h3></div>
                 <table className={styles.table}>
                   <thead>
-                    <tr>
-                      <th>Patient</th>
-                      <th>Amount</th>
-                      <th>Method</th>
-                      <th>Confirmed By</th>
-                      <th>Time</th>
-                    </tr>
+                    <tr><th>Patient</th><th>Amount</th><th>Method</th><th>Time</th></tr>
                   </thead>
                   <tbody>
                     {ledger.map(p => (
                       <tr key={p.id}>
                         <td>{p.patientName}</td>
-                        <td style={{fontWeight: 700, color: '#16a34a'}}>+{p.Amount.toLocaleString()}</td>
+                        <td style={{fontWeight: 700, color: '#16a34a'}}>+{p.Amount?.toLocaleString() ?? p.amount?.toLocaleString()}</td>
                         <td>{p.method}</td>
-                        <td>{p.confirmedBy}</td>
                         <td>{new Date(p.paidAt).toLocaleDateString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-
               <div className={styles.contentCard}>
-                <div className={styles.cardHeader}><h3>Outstanding Debts</h3></div>
+                <div className={styles.cardHeader}><h3>Outstanding Patient Debts</h3></div>
                 <table className={styles.table}>
                   <thead>
-                    <tr>
-                      <th>Patient / Bill</th>
-                      <th>Total</th>
-                      <th>Paid</th>
-                      <th>Balance</th>
-                    </tr>
+                    <tr><th>Patient</th><th>Total</th><th>Paid</th><th>Balance</th></tr>
                   </thead>
                   <tbody>
                     {debts.map(d => (
                       <tr key={d.id}>
-                        <td>{d.patientName} <br/><small>{d.billNumber}</small></td>
+                        <td>{d.patientName}</td>
                         <td>{d.totalAmount.toLocaleString()}</td>
                         <td>{d.totalPaid.toLocaleString()}</td>
                         <td style={{fontWeight: 700, color: '#dc2626'}}>{(d.totalAmount - d.totalPaid).toLocaleString()} RWF</td>
@@ -482,6 +524,57 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'disputes' && (
+          <>
+            <div className={styles.contentCard}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Date Raised</th>
+                    <th>Patient/Bill</th>
+                    <th>Challenged Item</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {disputes.map(d => (
+                    <tr key={d.id}>
+                      <td>{new Date(d.raisedAt).toLocaleDateString()}</td>
+                      <td>
+                        <div style={{fontWeight: 700}}>{d.bill?.patientName || 'Unknown'}</div>
+                        <div style={{fontSize: '12px', color: '#64748b'}}>{d.bill?.billNumber}</div>
+                      </td>
+                      <td>
+                        <div style={{fontWeight: 600}}>{d.billItem?.description}</div>
+                        <div style={{fontSize: '11px', color: '#64748b'}}>{d.billItem?.category}</div>
+                      </td>
+                      <td style={{fontSize: '13px', fontStyle: 'italic', color: '#475569'}}>{d.reason}</td>
+                      <td>
+                        <span className={`${styles.statusBadge} ${d.status === 0 ? styles.reviewStatus : d.status === 1 ? styles.activeStatus : styles.inactiveStatus}`}>
+                          {d.status === 0 ? 'Reviewing' : d.status === 1 ? 'Approved' : 'Rejected'}
+                        </span>
+                      </td>
+                      <td className={styles.tableActions}>
+                        {d.status === 0 && (
+                          <div style={{display: 'flex', gap: '8px'}}>
+                            <button className={styles.inlineResolveBtn} onClick={() => resolveDispute(d.id, true)}>Approve</button>
+                            <button className={styles.inlineRejectBtn} onClick={() => resolveDispute(d.id, false)}>Reject</button>
+                          </div>
+                        )}
+                        {d.status !== 0 && (
+                          <div style={{fontSize: '12px', color: '#64748b'}}>Resolved: {new Date(d.resolvedAt).toLocaleDateString()}</div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </>
         )}
@@ -531,7 +624,7 @@ export default function AdminDashboard() {
       {showCategoryModal && (
         <div className={styles.modalOverlay}>
           <div className={styles.modal}>
-            <h3>{editingCategory ? 'Edit Service Category' : 'Add New Category'}</h3>
+            <h3>{editingCategory ? 'Edit Service Category' : 'Register New Service'}</h3>
             <form onSubmit={handleCategorySubmit}>
               <div className={styles.formGroup}>
                 <label>Category Name</label>
@@ -550,18 +643,27 @@ export default function AdminDashboard() {
                 <input type="number" required value={categoryForm.basePrice} onChange={e => setCategoryForm({...categoryForm, basePrice: Number(e.target.value)})} />
               </div>
               <div className={styles.formGroup}>
-                <label>Description (Optional)</label>
+                <label>Stock Quantity (Optional)</label>
+                <input 
+                  type="number" 
+                  value={categoryForm.stockQuantity ?? ''} 
+                  onChange={e => setCategoryForm({...categoryForm, stockQuantity: e.target.value === '' ? null : Number(e.target.value)})}
+                  placeholder="For Medications/Consumables"
+                />
+              </div>
+              <div className={styles.formGroup}>
+                <label>Description</label>
                 <textarea 
                   className={styles.textarea}
                   value={categoryForm.description} 
                   onChange={e => setCategoryForm({...categoryForm, description: e.target.value})} 
-                  placeholder="Details about this service category..."
+                  placeholder="Details about this service..."
                 />
               </div>
               <div className={styles.formGroup}>
-                <label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                   <input type="checkbox" checked={categoryForm.isActive} onChange={e => setCategoryForm({...categoryForm, isActive: e.target.checked})} />
-                  &nbsp; Category is Active
+                  Category is Active
                 </label>
               </div>
               <div className={styles.modalActions}>

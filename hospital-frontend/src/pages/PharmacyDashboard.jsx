@@ -23,7 +23,8 @@ export default function PharmacyDashboard() {
   const [loading, setLoading] = useState(false)
   const [notification, setNotification] = useState({ message: '', type: 'success', icon: '' })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [dispenseModal, setDispenseModal] = useState({ isOpen: false, item: null, qty: 1 })
+  const [dispenseModal, setDispenseModal] = useState({ isOpen: false, item: null, qty: 1, categoryId: '' })
+  const [dbCategories, setDbCategories] = useState([])
 
   const showNotification = (message, type = 'success', icon = '✨') => {
     setNotification({ message, type, icon })
@@ -32,40 +33,78 @@ export default function PharmacyDashboard() {
 
   useEffect(() => { 
     fetchOrders() 
+    fetchCategories()
     showNotification('Pharmacy Portal Synchronized', 'success', '🛰️')
   }, [])
+
+  async function fetchCategories() {
+    try {
+      const { data } = await api.get('/servicecategory')
+      // Pharmacist role = 2
+      setDbCategories(data.filter(c => c.isActive && c.responsibleRole === 2))
+    } catch (err) {}
+  }
 
   async function fetchOrders() {
     setLoading(true)
     try {
-      const { data } = await api.get('/bills/summary')
+      // 1. Fetch formal prescriptions
+      const rxRes = await api.get('/prescriptions/pending')
+      const rxData = rxRes.data || []
+
+      // 2. Fetch bill summary (contains direct BillItem medications)
+      const billsRes = await api.get('/bills/summary')
+      const billsData = billsRes.data || []
       
-      // Filter visits that have Medication orders
-      const visitsWithMeds = data.filter(b => 
-        (b.status === 'Open' || b.status === 'Finalized') && 
-        b.items.some(i => i.category === 'Medication')
-      )
-      setAllVisits(visitsWithMeds)
-      
-      const pending = []
-      const completed = []
-      data.forEach(bill => {
-        bill.items.forEach(item => {
-          if (item.category === 'Medication') {
-            const t = { ...item, patientName: bill.patientName, billNumber: bill.billNumber }
-            if (item.isCompleted) completed.push(t)
-            else pending.push(t)
+      const visitsMap = {}
+
+      // Process formal prescriptions
+      rxData.forEach(rx => {
+        if (!visitsMap[rx.billId]) {
+          visitsMap[rx.billId] = {
+            id: rx.billId,
+            billNumber: rx.bill?.billNumber || 'Unknown',
+            patientName: rx.bill?.patient?.fullName || 'Unknown Patient',
+            status: rx.bill?.status || 'Open',
+            urgency: rx.bill?.urgency || 'Normal',
+            items: [], // Prescriptions
+            directMeds: [] // Direct BillItems
           }
-        })
+        }
+        visitsMap[rx.billId].items.push(rx)
       })
-      setPendingOrders(pending)
-      setDispensedHistory(completed)
+
+      // Process direct Medication BillItems
+      billsData.forEach(bill => {
+        const meds = (bill.items || []).filter(i => i.category === 'Medication' && !i.isCompleted)
+        if (meds.length > 0) {
+          if (!visitsMap[bill.id]) {
+            visitsMap[bill.id] = {
+              id: bill.id,
+              billNumber: bill.billNumber,
+              patientName: bill.patientName,
+              status: bill.status,
+              urgency: bill.urgency,
+              items: [],
+              directMeds: []
+            }
+          }
+          visitsMap[bill.id].directMeds = meds
+        }
+      })
+
+      const visitsWithPharmacyWork = Object.values(visitsMap)
+      setAllVisits(visitsWithPharmacyWork)
       
-      // Update selected visit if it exists
+      setPendingOrders(rxData.map(rx => ({ ...rx, patientName: rx.bill?.patient?.fullName, billNumber: rx.bill?.billNumber })))
+      
       if (selectedVisit) {
-        const updated = visitsWithMeds.find(v => v.id === selectedVisit.id)
+        const updated = visitsWithPharmacyWork.find(v => v.id === selectedVisit.id)
         if (updated) setSelectedVisit(updated)
+        else setSelectedVisit(null)
       }
+    } catch (err) {
+      console.error("Pharmacy Fetch Error:", err)
     } finally { setLoading(false) }
   }
 
@@ -81,14 +120,26 @@ export default function PharmacyDashboard() {
   }
 
   async function handleDispense() {
-    if (!dispenseModal.item) return
+    if (!dispenseModal.item || (!dispenseModal.categoryId && !dispenseModal.isDirect)) {
+      alert("Please select a drug from the inventory");
+      return;
+    }
     try {
-      await api.patch(`/bills/items/${dispenseModal.item.id}/dispense`, {
-        quantity: Number(dispenseModal.qty)
-      })
+      if (dispenseModal.isDirect) {
+        // Direct BillItem dispense
+        await api.patch(`/bills/items/${dispenseModal.item.id}/dispense`, {
+          quantity: Number(dispenseModal.qty)
+        })
+      } else {
+        // Formal Prescription dispense
+        await api.patch(`/prescriptions/${dispenseModal.item.id}/dispense`, {
+          serviceCategoryId: Number(dispenseModal.categoryId),
+          quantity: Number(dispenseModal.qty)
+        })
+      }
       await fetchOrders()
-      showNotification(`Dispensed: ${dispenseModal.item.description}`, 'success', '💊')
-      setDispenseModal({ isOpen: false, item: null, qty: 1 })
+      showNotification(`Dispensed: ${dispenseModal.item.drugName || dispenseModal.item.description}`, 'success', '💊')
+      setDispenseModal({ isOpen: false, item: null, qty: 1, categoryId: '', isDirect: false })
     } catch (err) {
       showNotification('Failed to dispense medication', 'error', '🛑')
     }
@@ -199,40 +250,54 @@ export default function PharmacyDashboard() {
 
             <div className={styles.visitDetailsRow}>
               <div className={styles.activeBillSection}>
-                <h3>Doctor's Prescription</h3>
+                <h3>Pharmacy Worklist</h3>
                 <div className={styles.billTable}>
-                  {selectedVisit.items.filter(i => i.category === 'Medication').length === 0 ? (
-                    <div className={styles.empty}>No drugs prescribed for this visit.</div>
+                  {(selectedVisit.items.length === 0 && selectedVisit.directMeds.length === 0) ? (
+                    <div className={styles.empty}>No prescriptions for this visit.</div>
                   ) : (
                     <table className={styles.table}>
                       <thead>
                         <tr>
-                          <th>Drug Name</th>
-                          <th>Prescribed Qty</th>
-                          <th>Status</th>
+                          <th>Order Type</th>
+                          <th>Drug/Item</th>
+                          <th>Instruction/Notes</th>
                           <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedVisit.items.filter(i => i.category === 'Medication').map(item => (
-                          <tr key={item.id}>
-                            <td style={{fontWeight: 700}}>{item.description}</td>
-                            <td>{item.quantity}</td>
+                        {/* Formal Prescriptions */}
+                        {selectedVisit.items.map(item => (
+                          <tr key={`rx-${item.id}`}>
+                            <td style={{fontSize: '11px', color: '#7c3aed', fontWeight: 800}}>PRESCRIPTION</td>
+                            <td style={{fontWeight: 700}}>{item.drugName}</td>
+                            <td>{item.dosage} - {item.frequency}</td>
                             <td>
-                              <span className={item.isCompleted ? styles.activeBadge : styles.inactiveBadge} style={item.isCompleted ? {background: '#7c3aed'} : {}}>
-                                {item.isCompleted ? 'Dispensed' : 'Authorized'}
-                              </span>
-                            </td>
-                            <td>
-                              {!item.isCompleted && (
+                              {item.status === 0 ? (
                                 <button 
                                   className={styles.miniCompleteBtn} 
-                                  onClick={() => setDispenseModal({ isOpen: true, item, qty: item.quantity })}
+                                  onClick={() => setDispenseModal({ isOpen: true, item, qty: 1, categoryId: dbCategories[0]?.id || '', isDirect: false })}
                                   style={{background: '#7c3aed'}}
                                 >
-                                  Dispense to Patient
+                                  Dispense
                                 </button>
-                              )}
+                              ) : <span className={styles.activeBadge} style={{background: '#7c3aed'}}>Dispensed</span>}
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Direct Medication Items */}
+                        {selectedVisit.directMeds.map(item => (
+                          <tr key={`direct-${item.id}`}>
+                            <td style={{fontSize: '11px', color: '#059669', fontWeight: 800}}>DIRECT ORDER</td>
+                            <td style={{fontWeight: 700}}>{item.description}</td>
+                            <td>{item.notes || 'No specific notes'}</td>
+                            <td>
+                              <button 
+                                className={styles.miniCompleteBtn} 
+                                onClick={() => setDispenseModal({ isOpen: true, item, qty: item.quantity || 1, categoryId: 'DIRECT', isDirect: true })}
+                                style={{background: '#059669'}}
+                              >
+                                Fulfill & Bill
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -264,11 +329,21 @@ export default function PharmacyDashboard() {
                     <div key={visit.id} className={styles.testCard} onClick={() => selectVisit(visit)} style={{ cursor: 'pointer', borderLeft: '4px solid #7c3aed' }}>
                       <div className={styles.testHeader}>
                         <span className={styles.patientName}>{visit.patientName}</span>
-                        <span className={styles.statusBadge}>{visit.status}</span>
+                        <div style={{display: 'flex', gap: '8px'}}>
+                          {visit.urgency !== 'Normal' && (
+                            <span style={{
+                              fontSize: '10px', fontWeight: '800', padding: '2px 8px', borderRadius: '4px',
+                              background: visit.urgency === 'Emergency' ? '#fee2e2' : '#ffedd5',
+                              color: visit.urgency === 'Emergency' ? '#dc2626' : '#9a3412',
+                              border: '1px solid currentColor'
+                            }}>{visit.urgency}</span>
+                          )}
+                          <span className={styles.statusBadge}>{visit.status}</span>
+                        </div>
                       </div>
                       <div className={styles.patientDate}>Bill ID: {visit.billNumber}</div>
                       <div className={styles.testDesc} style={{color: '#64748b'}}>
-                        {visit.items?.filter(i => i.category === 'Medication').length || 0} Medications Prescribed
+                        {visit.items.length || 0} Pending Prescriptions
                       </div>
                     </div>
                   )) : (
@@ -287,12 +362,12 @@ export default function PharmacyDashboard() {
                     }}>
                       <div className={styles.testHeader}>
                         <span className={styles.patientName}>{order.patientName}</span>
-                        <span className={`${styles.testBadge}`} style={order.isCompleted ? {background: '#7c3aed'} : {}}>
-                          {order.isCompleted ? 'Dispensed' : 'Waiting'}
+                        <span className={`${styles.testBadge}`} style={order.status === 1 ? {background: '#7c3aed'} : {}}>
+                          {order.status === 1 ? 'Dispensed' : 'Pending'}
                         </span>
                       </div>
-                      <div className={styles.testName}>{order.description}</div>
-                      <div className={styles.patientDate}>{order.billNumber} • Qty: {order.quantity}</div>
+                      <div className={styles.testName}>{order.drugName} {order.dosage}</div>
+                      <div className={styles.patientDate}>{order.billNumber} • Freq: {order.frequency}</div>
                     </div>
                   ))}
                   {(tab === 'pending' ? pendingOrders : dispensedHistory).length === 0 && (
@@ -319,13 +394,35 @@ export default function PharmacyDashboard() {
               Dispense Medication
             </h3>
             <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#64748b' }}>
-              Confirm quantity for <strong>{dispenseModal.item?.description}</strong>.
+              Select actual drug from inventory to bill for <strong>{dispenseModal.item?.drugName} ({dispenseModal.item?.dosage})</strong>.
             </p>
             
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 600 }}>INVENTORY DRUG TO BILL</label>
+              {dispenseModal.isDirect ? (
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '14px', color: '#475569' }}>
+                  <strong>{dispenseModal.item?.description}</strong> (Directly added to bill)
+                </div>
+              ) : (
+                <select 
+                  value={dispenseModal.categoryId}
+                  onChange={e => setDispenseModal({ ...dispenseModal, categoryId: e.target.value })}
+                  style={{
+                    width: '100%', padding: '12px', boxSizing: 'border-box', border: '1px solid #cbd5e1', 
+                    borderRadius: '6px', fontSize: '14px'
+                  }}
+                >
+                  <option value="">-- Select drug from stock --</option>
+                  {dbCategories.map(c => <option key={c.id} value={c.id}>{c.name} (RWF {c.basePrice})</option>)}
+                </select>
+              )}
+            </div>
+
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 600 }}>DISPENSED QUANTITY</label>
               <input 
                 type="number" 
+                min="1"
                 value={dispenseModal.qty}
                 onChange={e => setDispenseModal({ ...dispenseModal, qty: e.target.value })}
                 style={{

@@ -9,6 +9,7 @@ const NURSING_CATEGORIES = new Set(['NursingService', 'BedCharge', 'Consumable']
 
 export default function NurseDashboard() {
   const [user, setUserState] = useState(getUser())
+  const [tab, setTab] = useState('queue')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -257,6 +258,8 @@ export default function NurseDashboard() {
               )
             })}
           </div>
+        )}
+          </>
         )}
       </main>
     </div>

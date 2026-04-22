@@ -13,6 +13,7 @@ namespace HospitalBilling.Models
         public Patient Patient { get; set; } = null!;
 
         public BillStatus Status { get; set; } = BillStatus.Open;
+        public UrgencyLevel Urgency { get; set; } = UrgencyLevel.Normal;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? FinalizedAt { get; set; }
@@ -20,6 +21,9 @@ namespace HospitalBilling.Models
         // Staff who opened/created this bill (doctor or reception)
         public int? CreatedByStaffId { get; set; }
         public Staff? CreatedByStaff { get; set; }
+
+        public int? AssignedDoctorId { get; set; }
+        public Staff? AssignedDoctor { get; set; }
 
         // Set by billing staff when finalizing
         public int? FinalizedByStaffId { get; set; }
@@ -29,8 +33,8 @@ namespace HospitalBilling.Models
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();
         public ICollection<Dispute> Disputes { get; set; } = new List<Dispute>();
 
-        public decimal TotalAmount => Items.Where(i => i.IsCompleted).Sum(i => i.GrossAmount);
-        public decimal TotalInsurance => Items.Where(i => i.IsCompleted).Sum(i => i.InsuranceAmount);
+        public decimal TotalAmount => Items.Where(i => i.IsCompleted && !i.IsDisputed).Sum(i => i.GrossAmount);
+        public decimal TotalInsurance => Items.Where(i => i.IsCompleted && !i.IsDisputed).Sum(i => i.InsuranceAmount);
         public decimal PatientLiability => TotalAmount - TotalInsurance;
         
         public decimal TotalPaid => Payments.Where(p => p.IsConfirmed).Sum(p => p.Amount);
