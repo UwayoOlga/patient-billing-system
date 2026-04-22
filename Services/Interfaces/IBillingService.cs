@@ -65,5 +65,6 @@ namespace HospitalBilling.Services.Interfaces
         Task<List<Prescription>> GetPrescriptionsForBillAsync(int billId);
         Task<List<Prescription>> GetPendingPrescriptionsAsync();
         Task<BillItem> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto);
+        Task<PatientReportDto> GetPatientReportAsync(int patientId, DateTime start, DateTime end);
     }
 }

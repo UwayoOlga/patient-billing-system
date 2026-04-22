@@ -58,6 +58,7 @@ namespace HospitalBilling.Controllers
                 FullName = dto.FullName,
                 DateOfBirth = dto.DateOfBirth,
                 PhoneNumber = dto.PhoneNumber,
+                Email = dto.Email,
                 InsuranceProvider = provider,
                 InsuranceNumber = insuranceNumber,
                 InsuranceCoveragePercentage = coverage
@@ -71,6 +72,8 @@ namespace HospitalBilling.Controllers
                 Id = patient.Id,
                 FullName = patient.FullName,
                 PhoneNumber = patient.PhoneNumber,
+                DateOfBirth = patient.DateOfBirth,
+                NationalId = patient.NationalId,
                 InsuranceProvider = patient.InsuranceProvider,
                 InsuranceNumber = patient.InsuranceNumber,
                 InsuranceCoveragePercentage = patient.InsuranceCoveragePercentage,
@@ -86,6 +89,8 @@ namespace HospitalBilling.Controllers
                 Id = p.Id,
                 FullName = p.FullName,
                 PhoneNumber = p.PhoneNumber,
+                DateOfBirth = p.DateOfBirth,
+                NationalId = p.NationalId,
                 InsuranceProvider = p.InsuranceProvider,
                 InsuranceNumber = p.InsuranceNumber,
                 InsuranceCoveragePercentage = p.InsuranceCoveragePercentage,
@@ -161,6 +166,7 @@ namespace HospitalBilling.Controllers
             patient.FullName = dto.FullName;
             patient.DateOfBirth = dto.DateOfBirth;
             patient.PhoneNumber = dto.PhoneNumber;
+            patient.Email = dto.Email;
             patient.InsuranceProvider = provider;
             patient.InsuranceNumber = insuranceNumber;
             patient.InsuranceCoveragePercentage = coverage;
@@ -172,6 +178,72 @@ namespace HospitalBilling.Controllers
                 Id = patient.Id,
                 FullName = patient.FullName,
                 PhoneNumber = patient.PhoneNumber,
+                DateOfBirth = patient.DateOfBirth,
+                NationalId = patient.NationalId,
+                InsuranceProvider = patient.InsuranceProvider,
+                InsuranceNumber = patient.InsuranceNumber,
+                InsuranceCoveragePercentage = patient.InsuranceCoveragePercentage,
+                RegisteredAt = patient.RegisteredAt
+            });
+        }
+        [Authorize(Roles = "Patient")]
+        [HttpGet("profile")]
+        public async Task<IActionResult> GetProfile()
+        {
+            var patientIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(patientIdClaim, out var patientId))
+                return Unauthorized();
+
+            var p = await _db.Patients.FindAsync(patientId);
+            if (p == null) return NotFound();
+
+            return Ok(new PatientResponseDto
+            {
+                Id = p.Id,
+                FullName = p.FullName,
+                PhoneNumber = p.PhoneNumber,
+                Email = p.Email,
+                DateOfBirth = p.DateOfBirth,
+                NationalId = p.NationalId,
+                InsuranceProvider = p.InsuranceProvider,
+                InsuranceNumber = p.InsuranceNumber,
+                InsuranceCoveragePercentage = p.InsuranceCoveragePercentage,
+                RegisteredAt = p.RegisteredAt
+            });
+        }
+
+        [Authorize(Roles = "Patient")]
+        [HttpPut("profile")]
+        public async Task<IActionResult> UpdateProfile([FromBody] CreatePatientDto dto)
+        {
+            var patientIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(patientIdClaim, out var patientId))
+                return Unauthorized();
+
+            var patient = await _db.Patients.FindAsync(patientId);
+            if (patient == null) return NotFound();
+
+            if (dto.DateOfBirth > DateOnly.FromDateTime(DateTime.Now.Date))
+                return BadRequest(new { message = "Date of birth cannot be in the future." });
+
+            // Note: We don't allow patients to change their National ID or Insurance through the profile edit for security/verification reasons.
+            // But if the user explicitly wants them to edit it, we can. For now, let's allow Name, Phone, Email, DOB.
+            
+            patient.FullName = dto.FullName;
+            patient.PhoneNumber = dto.PhoneNumber;
+            patient.Email = dto.Email;
+            patient.DateOfBirth = dto.DateOfBirth;
+
+            await _db.SaveChangesAsync();
+
+            return Ok(new PatientResponseDto
+            {
+                Id = patient.Id,
+                FullName = patient.FullName,
+                PhoneNumber = patient.PhoneNumber,
+                Email = patient.Email,
+                DateOfBirth = patient.DateOfBirth,
+                NationalId = patient.NationalId,
                 InsuranceProvider = patient.InsuranceProvider,
                 InsuranceNumber = patient.InsuranceNumber,
                 InsuranceCoveragePercentage = patient.InsuranceCoveragePercentage,

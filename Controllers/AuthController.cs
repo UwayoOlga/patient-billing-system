@@ -69,6 +69,43 @@ namespace HospitalBilling.Controllers
             });
         }
 
+        [HttpPost("patient/register")]
+        public async Task<IActionResult> PatientRegister([FromBody] PatientSelfRegisterDto dto)
+        {
+            if (await _db.Patients.AnyAsync(p => p.PhoneNumber == dto.PhoneNumber || (!string.IsNullOrEmpty(dto.Email) && p.Email == dto.Email)))
+                return Conflict(new { message = "Phone number or email already in use." });
+
+            var patient = new Patient
+            {
+                FullName = dto.FullName,
+                PhoneNumber = dto.PhoneNumber,
+                Email = dto.Email,
+                DateOfBirth = dto.DateOfBirth,
+                NationalId = dto.NationalId,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+                RegisteredAt = DateTime.UtcNow
+            };
+
+            _db.Patients.Add(patient);
+            await _db.SaveChangesAsync();
+
+            var token = GeneratePatientToken(patient);
+            return Ok(new { token, role = "Patient", name = patient.FullName, patientId = patient.Id });
+        }
+
+        [HttpPost("patient/login")]
+        public async Task<IActionResult> PatientLogin([FromBody] PatientLoginDto dto)
+        {
+            var patient = await _db.Patients
+                .FirstOrDefaultAsync(p => p.PhoneNumber == dto.Identifier || p.Email == dto.Identifier);
+
+            if (patient == null || string.IsNullOrEmpty(patient.PasswordHash) || !BCrypt.Net.BCrypt.Verify(dto.Password, patient.PasswordHash))
+                return Unauthorized(new { message = "Invalid credentials." });
+
+            var token = GeneratePatientToken(patient);
+            return Ok(new { token, role = "Patient", name = patient.FullName, patientId = patient.Id });
+        }
+
         private string GenerateToken(Staff staff)
         {
             var key = new SymmetricSecurityKey(
@@ -88,6 +125,28 @@ namespace HospitalBilling.Controllers
                 audience: _config["Jwt:Audience"],
                 claims: claims,
                 expires: DateTime.UtcNow.AddHours(8),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private string GeneratePatientToken(Patient patient)
+        {
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, patient.Id.ToString()),
+                new Claim(ClaimTypes.Name, patient.FullName),
+                new Claim(ClaimTypes.Role, "Patient")
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddHours(24),
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);

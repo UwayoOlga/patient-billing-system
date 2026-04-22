@@ -60,6 +60,23 @@
 
 .printBtn:hover { background: #1e40af; }
 
+.finishBtn {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
+}
+.finishBtn:hover {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
 .closeBtn {
   background: none;
   border: none;

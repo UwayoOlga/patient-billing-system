@@ -42,9 +42,23 @@ namespace HospitalBilling.Controllers
         }
 
         /// <summary>
+        /// Patient pay: Allows a patient to pay their own bill (simulated).
+        /// </summary>
+        [HttpPost("patient-pay")]
+        public async Task<IActionResult> PatientPay([FromBody] PaymentDto dto)
+        {
+            // Record payment (no staffId involved for self-pay)
+            var payment = await _payments.RecordPaymentAsync(dto, null);
+            
+            // For this simulation, we auto-confirm patient self-payments immediately
+            await _payments.ConfirmPaymentAsync(payment.Id, null);
+            
+            return Ok(payment);
+        }
+
+        /// <summary>
         /// Get all payments for a bill (staff use).
         /// </summary>
-        [Authorize]
         [HttpGet("bill/{billId}")]
         public async Task<IActionResult> GetPaymentsForBill(int billId)
         {

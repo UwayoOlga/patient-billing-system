@@ -16,7 +16,10 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('hb_user')
-      window.location.href = '/login'
+      // Only redirect to staff login if NOT on the patient portal
+      if (!window.location.pathname.startsWith('/patient')) {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }

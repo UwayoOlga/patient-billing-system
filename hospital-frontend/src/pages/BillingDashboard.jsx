@@ -4,6 +4,7 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './BillingDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
+import logo from '../assets/logo.jpg'
 import PaymentProcessingModal from '../components/PaymentProcessingModal'
 
 export default function BillingDashboard() {
@@ -91,8 +92,9 @@ export default function BillingDashboard() {
       {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
 
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
-        <div className={styles.sidebarLogo}>
-          <svg className={styles.logoIcon} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <div className={styles.sidebarLogo} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 24px 24px' }}>
+          <img src={logo} alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />
+          <h2 style={{ fontSize: '12px', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', margin: 0 }}>HOSPITALBILLING</h2>
         </div>
         <nav className={styles.nav}>
           {navItems.map(item => (

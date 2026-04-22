@@ -8,6 +8,11 @@ namespace HospitalBilling.Models
         public string PhoneNumber { get; set; } = string.Empty;
         public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
 
+        // Authentication
+        public string? Email { get; set; }
+        public string? PasswordHash { get; set; }
+        public string? NationalId { get; set; }
+
         // Insurance metadata (0 if uninsured)
         public string? InsuranceProvider { get; set; }
         public string? InsuranceNumber { get; set; }

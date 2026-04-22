@@ -1,9 +1,11 @@
+using HospitalBilling.Data;
 using HospitalBilling.DTOs;
 using HospitalBilling.Enums;
 using HospitalBilling.Helpers;
 using HospitalBilling.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace HospitalBilling.Controllers
@@ -16,11 +18,13 @@ namespace HospitalBilling.Controllers
     {
         private readonly IBillingService _billing;
         private readonly IConfiguration _config;
+        private readonly AppDbContext _db;
 
-        public BillsController(IBillingService billing, IConfiguration config)
+        public BillsController(IBillingService billing, IConfiguration config, AppDbContext db)
         {
             _billing = billing;
             _config = config;
+            _db = db;
         }
 
         /// <summary>
@@ -316,13 +320,68 @@ namespace HospitalBilling.Controllers
         }
 
         /// <summary>
-        /// Patient access: view ALL bills associated with a phone number.
+        /// Patient access: view ALL bills associated with logged in patient.
         /// </summary>
-        [HttpGet("history/{phoneNumber}")]
-        public async Task<IActionResult> GetPatientHistory(string phoneNumber)
+        [Authorize(Roles = "Patient")]
+        [HttpGet("history")]
+        public async Task<IActionResult> GetPatientHistory()
         {
-            var bills = await _billing.GetBillsByPhoneAsync(phoneNumber);
+            var patientId = GetStaffId(); // Getting ID from NameIdentifier claim works for patients too
+            var patient = await _db.Patients.FindAsync(patientId);
+            if (patient == null) return NotFound();
+
+            var bills = await _billing.GetBillsByPhoneAsync(patient.PhoneNumber);
             return Ok(bills);
+        }
+
+        [Authorize(Roles = "Patient")]
+        [HttpPost("item/{billItemId}/dispute")]
+        public async Task<IActionResult> RaiseItemDispute(int billItemId, [FromBody] string reason)
+        {
+            var patientId = GetStaffId();
+            var item = await _db.BillItems
+                .Include(i => i.Bill)
+                .FirstOrDefaultAsync(i => i.Id == billItemId);
+
+            if (item == null) return NotFound(new { message = "Item not found." });
+            if (item.Bill.PatientId != patientId) return Unauthorized(new { message = "You can only dispute items on your own bills." });
+
+            await _billing.RaiseItemDisputeAsync(billItemId, reason);
+            return Ok(new { message = "Dispute raised successfully. Hospital staff will review it." });
+        }
+
+        [Authorize(Roles = "Patient")]
+        [HttpGet("disputes")]
+        public async Task<IActionResult> GetPatientDisputes()
+        {
+            var patientId = GetStaffId();
+            var disputes = await _db.Disputes
+                .Include(d => d.BillItem)
+                .ThenInclude(i => i.Bill)
+                .Where(d => d.BillItem.Bill.PatientId == patientId)
+                .Select(d => new {
+                    d.Id,
+                    d.Reason,
+                    d.Status,
+                    CreatedAt = d.RaisedAt,
+                    ItemDescription = d.BillItem.Description,
+                    BillNumber = d.BillItem.Bill.BillNumber
+                })
+                .ToListAsync();
+
+            return Ok(disputes);
+        }
+
+        [Authorize(Roles = "Patient")]
+        [HttpGet("report")]
+        public async Task<IActionResult> GetReport([FromQuery] DateTime? start, [FromQuery] DateTime? end)
+        {
+            var patientId = GetStaffId();
+            var startDate = start ?? DateTime.UtcNow.AddMonths(-1);
+            var endDate = end ?? DateTime.UtcNow;
+
+            var report = await _billing.GetPatientReportAsync(patientId, startDate, endDate);
+            return Ok(report);
         }
 
         // --- Helpers ---

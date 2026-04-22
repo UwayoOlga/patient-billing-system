@@ -1,6 +1,9 @@
 import { useRef, useState, useEffect } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
+import { jsPDF } from 'jspdf'
+import 'jspdf-autotable'
 import api from '../../utils/api'
+import logo from '../../assets/logo.jpg'
 import styles from './VisitDetailsModal.module.css'
 import AddPrescriptionModal from './AddPrescriptionModal'
 
@@ -53,6 +56,69 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
     setSignatureUrl(null)
   }
 
+  const exportToPDF = () => {
+    const doc = new jsPDF()
+    
+    // Header
+    doc.setFontSize(22); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
+    doc.setFontSize(10); doc.setTextColor(100); doc.text('Clinical Visit Summary & Medical Record', 14, 28)
+    
+    doc.setDrawColor(226, 232, 240); doc.line(14, 35, 196, 35)
+
+    // Patient Info
+    doc.setFontSize(9); doc.setTextColor(100); doc.text('PATIENT', 14, 45); doc.text('VISIT NO.', 110, 45)
+    doc.setFontSize(11); doc.setTextColor(15, 23, 42); 
+    doc.text(billData.patientName, 14, 51)
+    doc.text(billData.billNumber, 110, 51)
+
+    doc.setFontSize(9); doc.setTextColor(100); doc.text('DATE', 14, 62); doc.text('ATTENDING DOCTOR', 110, 62)
+    doc.setFontSize(11); doc.setTextColor(15, 23, 42);
+    doc.text(new Date(billData.createdAt).toLocaleDateString(), 14, 68)
+    doc.text(`Dr. ${billData.assignedDoctorName || 'TBD'}`, 110, 68)
+
+    // Clinical Findings
+    doc.setFontSize(12); doc.setTextColor(15, 23, 42); doc.text('Clinical Findings & Procedures', 14, 85)
+    const itemsTable = otherItems.map(i => [
+      i.category,
+      i.description,
+      i.notes || '—'
+    ])
+    doc.autoTable({
+      startY: 90,
+      head: [['Category', 'Description', 'Notes']],
+      body: itemsTable,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    })
+
+    // Prescriptions
+    let finalY = doc.lastAutoTable.finalY + 15
+    doc.setFontSize(12); doc.setTextColor(15, 23, 42); doc.text('Prescriptions', 14, finalY)
+    const rxTable = prescriptions.map(rx => [
+      rx.drugName,
+      rx.dosage,
+      rx.frequency,
+      rx.duration
+    ])
+    doc.autoTable({
+      startY: finalY + 5,
+      head: [['Drug', 'Dosage', 'Frequency', 'Duration']],
+      body: rxTable,
+      theme: 'striped',
+      headStyles: { fillColor: [5, 150, 105] }
+    })
+
+    // Signature
+    finalY = doc.lastAutoTable.finalY + 20
+    if (signatureUrl) {
+      doc.addImage(signatureUrl, 'PNG', 140, finalY, 40, 20)
+      doc.line(140, finalY + 22, 180, finalY + 22)
+      doc.setFontSize(8); doc.text('Physician Signature', 140, finalY + 26)
+    }
+
+    doc.save(`Visit_Summary_${billData.billNumber}.pdf`)
+  }
+
   function handlePrint() {
     window.print()
   }
@@ -74,9 +140,12 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
         <div className={styles.noPrintHeader}>
           <h3>Visit Details & Summary</h3>
           <div className={styles.actionsBox}>
-            <button className={styles.printBtn} onClick={handlePrint}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-              Print / Save PDF
+            <button className={styles.printBtn} onClick={exportToPDF}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Summary PDF
+            </button>
+            <button className={styles.finishBtn} onClick={() => onUpdated()}>
+              Finish Consultation
             </button>
             <button className={styles.closeBtn} onClick={onClose}>✕</button>
           </div>

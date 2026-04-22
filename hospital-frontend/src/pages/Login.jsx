@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../utils/api'
 import { setUser } from '../utils/auth'
 import styles from './Login.module.css'
+import logo from '../assets/logo.jpg'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -39,10 +40,10 @@ export default function Login() {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <div className={styles.logo}>
-          <svg className={styles.logoIcon} width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-          <h1>Hospital Billing</h1>
-          <p>Staff Portal</p>
+        <div className={styles.loginHeader}>
+          <img src={logo} alt="Logo" style={{ height: '64px', borderRadius: '12px', marginBottom: '20px' }} />
+          <h2>Staff Portal</h2>
+          <p>Login to your account to manage billing</p>
         </div>
         <form onSubmit={handleSubmit} className={styles.form}>
           {error && <div className={styles.error}>{error}</div>}

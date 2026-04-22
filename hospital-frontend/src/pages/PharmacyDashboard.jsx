@@ -4,6 +4,7 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './LabDashboard.module.css' // Reusing styles for consistency
 import ProfileTab from '../components/ProfileTab'
+import logo from '../assets/logo.jpg'
 
 export default function PharmacyDashboard() {
   const [user, setUserState] = useState(getUser())
@@ -161,8 +162,9 @@ export default function PharmacyDashboard() {
 
       {/* Sidebar */}
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
-        <div className={styles.sidebarLogo}>
-          <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.2 7.8l-7.1 7.1c-.8.8-2.2.8-3 0l-7.1-7.1c-.8-.8-.8-2.2 0-3l7.1-7.1c.8-.8 2.2-.8 3 0l7.1 7.1c.8.8.8 2.2 0 3z"/><path d="M12 7l1.5 1.5c.8.8.8 2.2 0 3L12 13l-1.5-1.5c-.8-.8-.8-2.2 0-3L12 7z"/></svg>
+        <div className={styles.sidebarLogo} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 24px 24px' }}>
+          <img src={logo} alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />
+          <h2 style={{ fontSize: '12px', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', margin: 0 }}>HOSPITALBILLING</h2>
         </div>
         <nav className={styles.nav}>
           <a className={`${styles.navItem} ${tab === 'pending' ? styles.active : ''}`} onClick={() => { setTab('pending'); setMobileMenuOpen(false); }}>

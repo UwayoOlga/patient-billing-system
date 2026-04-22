@@ -16,13 +16,16 @@ namespace HospitalBilling.Services
             _db = db;
         }
 
-        public async Task<PaymentResponseDto> RecordPaymentAsync(PaymentDto dto, int staffId)
+        public async Task<PaymentResponseDto> RecordPaymentAsync(PaymentDto dto, int? staffId)
         {
-            var bill = await _db.Bills.FindAsync(dto.BillId)
+            var bill = await _db.Bills
+                .Include(b => b.Items)
+                .Include(b => b.Payments)
+                .FirstOrDefaultAsync(b => b.Id == dto.BillId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Finalized && bill.Status != BillStatus.Paid)
-                throw new InvalidOperationException("Bill must be finalized before recording payment.");
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.Finalized && bill.Status != BillStatus.Paid)
+                throw new InvalidOperationException("This bill cannot accept payments in its current state.");
 
             if (dto.Amount > bill.BalanceDue && dto.Amount > 0)
                 throw new InvalidOperationException($"Cannot pay more than the balance due (RWF {bill.BalanceDue}).");
@@ -42,19 +45,19 @@ namespace HospitalBilling.Services
             return MapToDto(payment);
         }
 
-        public async Task<PaymentResponseDto> ConfirmPaymentAsync(int paymentId, int staffId)
+        public async Task<PaymentResponseDto> ConfirmPaymentAsync(int paymentId, int? staffId)
         {
             var payment = await _db.Payments
-                .Include(p => p.Bill)
+                .Include(p => p.Bill).ThenInclude(b => b.Items)
+                .Include(p => p.Bill).ThenInclude(b => b.Payments)
                 .FirstOrDefaultAsync(p => p.Id == paymentId)
                 ?? throw new KeyNotFoundException("Payment not found.");
 
             payment.IsConfirmed = true;
-            payment.ConfirmedByStaffId = staffId;
+            if (staffId.HasValue) payment.ConfirmedByStaffId = staffId.Value;
 
             // If balance is fully paid, mark bill as Paid
             var bill = payment.Bill;
-            await _db.Entry(bill).Collection(b => b.Payments).LoadAsync();
 
             if (bill.BalanceDue <= 0)
                 bill.Status = BillStatus.Paid;

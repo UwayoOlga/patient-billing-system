@@ -210,8 +210,10 @@ namespace HospitalBilling.Services
                 && item.Category != BillItemCategory.Consumable)
                 throw new InvalidOperationException("Only nursing categories can be completed by nurse workflow.");
 
-            if (item.AddedByStaff.Role != StaffRole.Doctor)
-                throw new InvalidOperationException("Only doctor-ordered nursing tasks can be completed.");
+            if (item.AddedByStaff.Role != StaffRole.Doctor && 
+                item.AddedByStaff.Role != StaffRole.Admin &&
+                item.AddedByStaff.Role != StaffRole.Receptionist)
+                throw new InvalidOperationException("Only hospital-ordered nursing tasks can be completed.");
 
             if (quantity <= 0)
                 throw new InvalidOperationException("Quantity must be at least 1.");
@@ -289,12 +291,21 @@ namespace HospitalBilling.Services
 
         public async Task<List<BillDto>> GetBillsByPhoneAsync(string phoneNumber)
         {
+            // Normalize phone number to last 9 digits for robust matching
+            var normalizedPhone = phoneNumber.Length >= 9 ? phoneNumber.Substring(phoneNumber.Length - 9) : phoneNumber;
+
+            // Find all patient records with matching phone number suffix
+            var patientIds = await _db.Patients
+                .Where(p => p.PhoneNumber.EndsWith(normalizedPhone))
+                .Select(p => p.Id)
+                .ToListAsync();
+
             var bills = await _db.Bills
                 .Include(b => b.Patient)
                 .Include(b => b.AssignedDoctor)
                 .Include(b => b.Items).ThenInclude(i => i.AddedByStaff)
                 .Include(b => b.Payments)
-                .Where(b => b.Patient.PhoneNumber == phoneNumber)
+                .Where(b => patientIds.Contains(b.PatientId) && b.Status != BillStatus.Trash)
                 .OrderByDescending(b => b.CreatedAt)
                 .ToListAsync();
 
@@ -692,5 +703,51 @@ namespace HospitalBilling.Services
             CompletedAt = item.CompletedAt,
             Notes = item.Notes
         };
+        public async Task<PatientReportDto> GetPatientReportAsync(int patientId, DateTime start, DateTime end)
+        {
+            var patient = await _db.Patients.FindAsync(patientId)
+                ?? throw new KeyNotFoundException("Patient not found.");
+
+            // Normalize phone number to last 9 digits for robust matching
+            var normalizedPhone = patient.PhoneNumber.Length >= 9 ? patient.PhoneNumber.Substring(patient.PhoneNumber.Length - 9) : patient.PhoneNumber;
+
+            // Find all linked patient IDs (same phone suffix or National ID)
+            var linkedPatientIds = await _db.Patients
+                .Where(p => p.PhoneNumber.EndsWith(normalizedPhone) || (p.NationalId != null && p.NationalId == patient.NationalId))
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            var adjustedEnd = end.Date.AddDays(1).AddTicks(-1);
+
+            var bills = await _db.Bills
+                .Include(b => b.Items)
+                .Include(b => b.Payments)
+                .Where(b => linkedPatientIds.Contains(b.PatientId) && b.CreatedAt >= start.Date && b.CreatedAt <= adjustedEnd)
+                .OrderBy(b => b.CreatedAt)
+                .ToListAsync();
+
+            var report = new PatientReportDto
+            {
+                PatientName = patient.FullName,
+                StartDate = start,
+                EndDate = end,
+                VisitCount = bills.Count,
+                TotalSpent = bills.Sum(b => b.PatientLiability),
+                TotalInsurance = bills.Sum(b => b.TotalInsurance),
+                Visits = bills.Select(b => new PatientReportVisitDto
+                {
+                    BillId = b.Id,
+                    BillNumber = b.BillNumber,
+                    Date = b.CreatedAt,
+                    TotalAmount = b.TotalAmount,
+                    InsuranceAmount = b.TotalInsurance,
+                    PatientAmount = b.PatientLiability,
+                    PaidAmount = b.TotalPaid,
+                    Status = b.Status.ToString()
+                }).ToList()
+            };
+
+            return report;
+        }
     }
 }

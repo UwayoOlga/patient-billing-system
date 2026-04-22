@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import styles from './LandingPage.module.css'
 import slide1 from '../assets/landingPageImage1.jpg'
 import slide2 from '../assets/landingPageImage2.png'
+import logo from '../assets/logo.jpg'
 
 export default function LandingPage() {
   const slides = [slide1, slide2]
@@ -20,8 +21,8 @@ export default function LandingPage() {
       {/* ─── NAVIGATION ─── */}
       <nav className={styles.navbar}>
         <Link to="/" className={styles.logo}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-          HospitalBilling
+          <img src={logo} alt="Logo" style={{ height: '32px', borderRadius: '4px' }} />
+          <span style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '0.05em' }}>HOSPITALBILLING</span>
         </Link>
         <div className={styles.navLinks}>
           <Link to="/login" className={styles.loginBtnSecondary}>Staff Login</Link>
