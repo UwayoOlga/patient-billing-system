@@ -660,20 +660,31 @@
   justify-content: flex-end;
 }
 
-@media print {
+.printableReceipt {
+  display: none;
+}
 
-  .sidebar,
+@media print {
+  .topNav,
   .header,
+  .paySection,
   .no-print {
     display: none !important;
   }
 
-  .main {
-    margin-left: 0 !important;
+  .mainContainer {
     padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
   }
 
-  :global(.print-only) {
+  .billContainer {
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+  }
+
+  .printableReceipt {
     display: block !important;
   }
 }

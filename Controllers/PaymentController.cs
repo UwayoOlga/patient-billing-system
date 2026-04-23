@@ -66,6 +66,17 @@ namespace HospitalBilling.Controllers
             return Ok(payments);
         }
 
+        /// <summary>
+        /// Cashier report based on confirmed payments within a date-time range.
+        /// </summary>
+        [Authorize(Roles = "Cashier,Admin")]
+        [HttpGet("reports/cashier")]
+        public async Task<IActionResult> GetCashierReport([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+        {
+            var report = await _payments.GetCashierReportAsync(startDate, endDate);
+            return Ok(report);
+        }
+
         private int GetStaffId() =>
             int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     }

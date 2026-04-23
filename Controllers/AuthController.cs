@@ -35,7 +35,7 @@ namespace HospitalBilling.Controllers
                 return Unauthorized(new { message = "Invalid credentials." });
 
             var token = GenerateToken(staff);
-            return Ok(new { token, role = staff.Role.ToString(), name = staff.FullName });
+            return Ok(new { token, role = staff.Role.ToString(), name = staff.FullName, id = staff.Id });
         }
 
         /// <summary>Register a new staff member (Admin only).</summary>
@@ -72,13 +72,39 @@ namespace HospitalBilling.Controllers
         [HttpPost("patient/register")]
         public async Task<IActionResult> PatientRegister([FromBody] PatientSelfRegisterDto dto)
         {
-            if (await _db.Patients.AnyAsync(p => p.PhoneNumber == dto.PhoneNumber || (!string.IsNullOrEmpty(dto.Email) && p.Email == dto.Email)))
-                return Conflict(new { message = "Phone number or email already in use." });
+            // Normalize phone for comparison
+            var phone = dto.PhoneNumber.Trim();
+            
+            // 1. Check if an account already exists with this phone or national ID
+            var existingPatient = await _db.Patients
+                .FirstOrDefaultAsync(p => p.PhoneNumber == phone || p.NationalId == dto.NationalId);
 
+            if (existingPatient != null)
+            {
+                // If they already have a password, it's a real conflict (someone else's account or already registered)
+                if (!string.IsNullOrEmpty(existingPatient.PasswordHash))
+                {
+                    return Conflict(new { message = "An account with this phone number or National ID is already registered. Please login instead." });
+                }
+
+                // If no password, we LINK the portal account to this existing hospital record
+                existingPatient.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+                
+                // Update missing info if provided during portal registration
+                if (string.IsNullOrEmpty(existingPatient.Email)) existingPatient.Email = dto.Email;
+                if (string.IsNullOrEmpty(existingPatient.NationalId)) existingPatient.NationalId = dto.NationalId;
+                
+                await _db.SaveChangesAsync();
+
+                var token = GeneratePatientToken(existingPatient);
+                return Ok(new { token, role = "Patient", name = existingPatient.FullName, patientId = existingPatient.Id });
+            }
+
+            // 2. If no existing patient found at all, create a brand new record
             var patient = new Patient
             {
                 FullName = dto.FullName,
-                PhoneNumber = dto.PhoneNumber,
+                PhoneNumber = phone,
                 Email = dto.Email,
                 DateOfBirth = dto.DateOfBirth,
                 NationalId = dto.NationalId,
@@ -89,8 +115,8 @@ namespace HospitalBilling.Controllers
             _db.Patients.Add(patient);
             await _db.SaveChangesAsync();
 
-            var token = GeneratePatientToken(patient);
-            return Ok(new { token, role = "Patient", name = patient.FullName, patientId = patient.Id });
+            var newToken = GeneratePatientToken(patient);
+            return Ok(new { token = newToken, role = "Patient", name = patient.FullName, patientId = patient.Id });
         }
 
         [HttpPost("patient/login")]

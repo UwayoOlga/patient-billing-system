@@ -64,10 +64,10 @@ export default function PharmacyDashboard() {
         if (!visitsMap[rx.billId]) {
           visitsMap[rx.billId] = {
             id: rx.billId,
-            billNumber: rx.bill?.billNumber || 'Unknown',
-            patientName: rx.bill?.patient?.fullName || 'Unknown Patient',
-            status: rx.bill?.status || 'Open',
-            urgency: rx.bill?.urgency || 'Normal',
+            billNumber: rx.billNumber || 'Unknown',
+            patientName: rx.patientName || 'Unknown Patient',
+            status: 'Open',
+            urgency: 'Normal',
             items: [], // Prescriptions
             directMeds: [] // Direct BillItems
           }
@@ -97,7 +97,7 @@ export default function PharmacyDashboard() {
       const visitsWithPharmacyWork = Object.values(visitsMap)
       setAllVisits(visitsWithPharmacyWork)
       
-      setPendingOrders(rxData.map(rx => ({ ...rx, patientName: rx.bill?.patient?.fullName, billNumber: rx.bill?.billNumber })))
+      setPendingOrders(rxData.map(rx => ({ ...rx, patientName: rx.patientName, billNumber: rx.billNumber })))
       
       if (selectedVisit) {
         const updated = visitsWithPharmacyWork.find(v => v.id === selectedVisit.id)

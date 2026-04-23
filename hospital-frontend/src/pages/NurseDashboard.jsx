@@ -30,6 +30,7 @@ export default function NurseDashboard() {
     start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   })
+  const [notification, setNotification] = useState({ message: '', type: 'success' })
   const [reportData, setReportData] = useState(null)
 
   useEffect(() => {
@@ -50,8 +51,7 @@ export default function NurseDashboard() {
 
   function getNursingOrders(bill) {
     return (bill.items || []).filter(i => 
-      NURSING_CATEGORIES.has(i.category) && 
-      (i.addedByRole === 'Doctor' || i.addedByRole === 'Admin')
+      NURSING_CATEGORIES.has(i.category)
     )
   }
 
@@ -67,14 +67,18 @@ export default function NurseDashboard() {
     const today = new Date().toDateString()
     return bills.flatMap(b => 
       (b.items || [])
-        .filter(i => 
-          NURSING_CATEGORIES.has(i.category) && 
-          i.isCompleted && 
-          i.completedAt &&
-          new Date(i.completedAt).toDateString() === today
-        )
+        .filter(i => {
+          if (!NURSING_CATEGORIES.has(i.category) || !i.isCompleted || !i.completedAt) return false
+          if (user?.id && i.completedByStaffId && i.completedByStaffId !== user.id) return false
+          const dateStr = i.completedAt.endsWith('Z') ? i.completedAt : i.completedAt + 'Z'
+          return new Date(dateStr).toDateString() === today
+        })
         .map(i => ({ ...i, patientName: b.patientName, billNumber: b.billNumber }))
-    ).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    ).sort((a, b) => {
+      const d1 = new Date(b.completedAt.endsWith('Z') ? b.completedAt : b.completedAt + 'Z')
+      const d2 = new Date(a.completedAt.endsWith('Z') ? a.completedAt : a.completedAt + 'Z')
+      return d1 - d2
+    })
   }, [bills])
 
   async function completeOrder(itemId) {
@@ -85,6 +89,7 @@ export default function NurseDashboard() {
     setSavingId(itemId)
     try {
       await api.patch(`/bills/items/${itemId}/nursing-complete`, { quantity, notes })
+      showNotification('Service marked as completed.', 'success')
       await fetchNursingOrders()
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to complete nursing service.')
@@ -102,6 +107,11 @@ export default function NurseDashboard() {
         [field]: value
       }
     }))
+  }
+
+  function showNotification(message, type = 'success') {
+    setNotification({ message, type })
+    setTimeout(() => setNotification({ message: '', type: 'success' }), 4000)
   }
 
   function handleLogout() {
@@ -224,6 +234,17 @@ export default function NurseDashboard() {
             </div>
           </div>
         </header>
+
+        {notification.message && (
+          <div style={{
+            position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
+            background: notification.type === 'success' ? '#059669' : '#dc2626',
+            color: 'white', padding: '12px 24px', borderRadius: '12px',
+            zIndex: 10000, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontWeight: 700
+          }}>
+            {notification.message}
+          </div>
+        )}
 
         {tab === 'profile' ? <ProfileTab /> : tab === 'reports' ? (
           <div className={styles.reportView}>

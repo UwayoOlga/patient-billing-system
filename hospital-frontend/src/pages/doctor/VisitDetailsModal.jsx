@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import api from '../../utils/api'
 import logo from '../../assets/logo.jpg'
 import styles from './VisitDetailsModal.module.css'
@@ -83,16 +83,21 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
       i.description,
       i.notes || '—'
     ])
-    doc.autoTable({
-      startY: 90,
-      head: [['Category', 'Description', 'Notes']],
-      body: itemsTable,
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] }
-    })
+    
+    if (itemsTable.length > 0) {
+      autoTable(doc, {
+        startY: 90,
+        head: [['Category', 'Description', 'Notes']],
+        body: itemsTable,
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42] }
+      })
+    } else {
+      doc.setFontSize(10); doc.setTextColor(100); doc.text('No clinical findings recorded.', 14, 95)
+    }
 
     // Prescriptions
-    let finalY = doc.lastAutoTable.finalY + 15
+    let finalY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 100) + 15
     doc.setFontSize(12); doc.setTextColor(15, 23, 42); doc.text('Prescriptions', 14, finalY)
     const rxTable = prescriptions.map(rx => [
       rx.drugName,
@@ -100,16 +105,21 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
       rx.frequency,
       rx.duration
     ])
-    doc.autoTable({
-      startY: finalY + 5,
-      head: [['Drug', 'Dosage', 'Frequency', 'Duration']],
-      body: rxTable,
-      theme: 'striped',
-      headStyles: { fillColor: [5, 150, 105] }
-    })
+    
+    if (rxTable.length > 0) {
+      autoTable(doc, {
+        startY: finalY + 5,
+        head: [['Drug', 'Dosage', 'Frequency', 'Duration']],
+        body: rxTable,
+        theme: 'striped',
+        headStyles: { fillColor: [5, 150, 105] }
+      })
+    } else {
+      doc.setFontSize(10); doc.setTextColor(100); doc.text('No prescriptions recorded.', 14, finalY + 10)
+    }
 
     // Signature
-    finalY = doc.lastAutoTable.finalY + 20
+    finalY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : finalY + 15) + 20
     if (signatureUrl) {
       doc.addImage(signatureUrl, 'PNG', 140, finalY, 40, 20)
       doc.line(140, finalY + 22, 180, finalY + 22)
@@ -144,7 +154,7 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download Summary PDF
             </button>
-            <button className={styles.finishBtn} onClick={() => onUpdated()}>
+            <button className={styles.finishBtn} onClick={() => { onUpdated(); onClose(); }}>
               Finish Consultation
             </button>
             <button className={styles.closeBtn} onClick={onClose}>✕</button>

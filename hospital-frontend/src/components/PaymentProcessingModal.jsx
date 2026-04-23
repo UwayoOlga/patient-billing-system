@@ -65,7 +65,11 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
       // 3. Confirm the payment (to update bill status to Paid if balance is 0)
       await api.patch(`/payment/${payResp.data.id}/confirm`)
 
-      // 4. Move to receipt step
+      // 4. Refresh bill so receipt/payment history reflects latest transaction
+      const refreshed = await api.get(`/bills/${bill.id}`)
+      setBill(refreshed.data)
+
+      // 5. Move to receipt step
       setStep('Receipt')
       onPaymentSuccess?.()
     } catch (err) {

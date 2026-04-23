@@ -6,6 +6,8 @@ import styles from './BillingDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
 import logo from '../assets/logo.jpg'
 import PaymentProcessingModal from '../components/PaymentProcessingModal'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function BillingDashboard() {
   const [user, setUserState] = useState(getUser())
@@ -24,8 +26,43 @@ export default function BillingDashboard() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedBillId, setSelectedBillId] = useState(null)
   const [bills, setBills] = useState([])
+  const [disputes, setDisputes] = useState([])
+  const [disputesLoading, setDisputesLoading] = useState(false)
+  const [disputeFilter, setDisputeFilter] = useState('open')
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState('')
+  const [cashierReport, setCashierReport] = useState({
+    totalCollected: 0,
+    totalTransactions: 0,
+    averageTransactionAmount: 0,
+    paymentMethodSummary: [],
+    transactions: []
+  })
+  const [reportRange, setReportRange] = useState(() => {
+    const now = new Date()
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    return {
+      start: toDateTimeLocal(dayStart),
+      end: toDateTimeLocal(now)
+    }
+  })
 
   useEffect(() => { fetchBills() }, [])
+  useEffect(() => {
+    if (activeTab === 'reports') {
+      fetchCashierReport()
+    }
+    if (activeTab === 'disputes') {
+      fetchDisputes(disputeFilter === 'open')
+    }
+  }, [activeTab])
+
+  useEffect(() => {
+    if (activeTab === 'disputes') {
+      fetchDisputes(disputeFilter === 'open')
+    }
+  }, [disputeFilter])
 
   async function fetchBills() {
     setLoading(true)
@@ -37,6 +74,99 @@ export default function BillingDashboard() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function fetchCashierReport() {
+    setReportLoading(true)
+    setReportError('')
+    try {
+      const params = {}
+      if (reportRange.start) params.startDate = new Date(reportRange.start).toISOString()
+      if (reportRange.end) params.endDate = new Date(reportRange.end).toISOString()
+
+      const { data } = await api.get('/payment/reports/cashier', { params })
+      setCashierReport({
+        totalCollected: data.totalCollected ?? 0,
+        totalTransactions: data.totalTransactions ?? 0,
+        averageTransactionAmount: data.averageTransactionAmount ?? 0,
+        paymentMethodSummary: data.paymentMethodSummary ?? [],
+        transactions: data.transactions ?? []
+      })
+    } catch (err) {
+      console.error('Failed to generate cashier report', err)
+      const message = err?.response?.data?.message || 'Failed to generate report for selected time range.'
+      setReportError(message)
+      setCashierReport({
+        totalCollected: 0,
+        totalTransactions: 0,
+        averageTransactionAmount: 0,
+        paymentMethodSummary: [],
+        transactions: []
+      })
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  async function fetchDisputes(openOnly = true) {
+    setDisputesLoading(true)
+    try {
+      const { data } = await api.get('/disputes', { params: { openOnly } })
+      setDisputes(data ?? [])
+    } catch (err) {
+      console.error('Failed to fetch disputes', err)
+      setDisputes([])
+    } finally {
+      setDisputesLoading(false)
+    }
+  }
+
+  async function handleResolveDispute(disputeId, approve) {
+    const resolutionNotes = window.prompt(approve ? 'Resolution notes (optional):' : 'Rejection reason (optional):') ?? ''
+    try {
+      await api.patch(`/dispute/resolve/${disputeId}`, {
+        approve: approve,
+        notes: resolutionNotes
+      })
+      await fetchDisputes(disputeFilter === 'open')
+    } catch (err) {
+      console.error('Failed to update dispute', err)
+      alert(err?.response?.data?.message || 'Failed to update dispute.')
+    }
+  }
+
+  function downloadCashierPdfReport() {
+    const doc = new jsPDF()
+    const rangeLabel = `${reportRange.start || 'Beginning'} to ${reportRange.end || 'Now'}`
+
+    doc.setFontSize(18)
+    doc.text('Cashier Collection Report', 14, 18)
+    doc.setFontSize(11)
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26)
+    doc.text(`Range: ${rangeLabel}`, 14, 32)
+    doc.text(`Total Collected: RWF ${cashierReport.totalCollected.toLocaleString()}`, 14, 38)
+    doc.text(`Transactions: ${cashierReport.totalTransactions}`, 14, 44)
+
+    const tableRows = cashierReport.transactions.map(t => [
+      new Date(t.paidAt).toLocaleString(),
+      t.billNumber,
+      t.patientName,
+      t.method,
+      t.reference || 'N/A',
+      t.confirmedBy,
+      `RWF ${Number(t.amount || 0).toLocaleString()}`
+    ])
+
+    autoTable(doc, {
+      startY: 52,
+      head: [['Paid At', 'Bill #', 'Patient', 'Method', 'Reference', 'Confirmed By', 'Amount']],
+      body: tableRows,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [15, 23, 42] }
+    })
+
+    const filename = `Cashier_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    doc.save(filename)
   }
 
   function handleLogout() {
@@ -56,17 +186,6 @@ export default function BillingDashboard() {
   const openCount = bills.filter(b => b.status === 'Open').length
   const finalizedCount = bills.filter(b => b.status === 'Finalized').length
 
-  // Reporting Logic
-  const today = new Date().toDateString()
-  const billsToday = bills.filter(b => new Date(b.createdAt).toDateString() === today)
-  const revenueToday = billsToday.reduce((acc, b) => acc + b.totalPaid, 0)
-  const categorySummary = {}
-  billsToday.forEach(b => {
-    b.items.forEach(i => {
-      categorySummary[i.category] = (categorySummary[i.category] || 0) + i.subtotal
-    })
-  })
-
   const navItems = [
     {
       key: 'dashboard', label: 'Dashboard',
@@ -75,6 +194,10 @@ export default function BillingDashboard() {
     {
       key: 'reports', label: 'Daily Reports',
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+    },
+    {
+      key: 'disputes', label: 'Bill Disputes',
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
     },
     {
       key: 'profile', label: 'My Profile',
@@ -236,28 +359,185 @@ export default function BillingDashboard() {
 
         {activeTab === 'reports' && (
           <div className={styles.reportsPage}>
+            <div className={styles.reportsFilterRow}>
+              <div className={styles.reportsField}>
+                <label htmlFor="report-start">Start Time</label>
+                <input
+                  id="report-start"
+                  type="datetime-local"
+                  value={reportRange.start}
+                  onChange={e => setReportRange(prev => ({ ...prev, start: e.target.value }))}
+                />
+              </div>
+              <div className={styles.reportsField}>
+                <label htmlFor="report-end">End Time</label>
+                <input
+                  id="report-end"
+                  type="datetime-local"
+                  value={reportRange.end}
+                  onChange={e => setReportRange(prev => ({ ...prev, end: e.target.value }))}
+                />
+              </div>
+              <button
+                className={styles.generateBtn}
+                onClick={fetchCashierReport}
+                disabled={reportLoading}
+              >
+                {reportLoading ? 'Generating...' : 'Generate Report'}
+              </button>
+              <button
+                className={styles.pdfBtn}
+                onClick={downloadCashierPdfReport}
+                disabled={cashierReport.transactions.length === 0}
+              >
+                Download PDF
+              </button>
+            </div>
+
+            {reportError && <div className={styles.reportError}>{reportError}</div>}
+
             <div className={styles.statsRow}>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>Revenue Collected Today</div>
-                <div className={styles.statValue} style={{ color: '#059669' }}>RWF {revenueToday.toLocaleString()}</div>
+                <div className={styles.statLabel}>Total Collected</div>
+                <div className={styles.statValue} style={{ color: '#059669' }}>
+                  RWF {cashierReport.totalCollected.toLocaleString()}
+                </div>
               </div>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>New Visits Created Today</div>
-                <div className={styles.statValue}>{billsToday.length}</div>
+                <div className={styles.statLabel}>Confirmed Transactions</div>
+                <div className={styles.statValue}>{cashierReport.totalTransactions}</div>
+              </div>
+              <div className={styles.statCard}>
+                <div className={styles.statLabel}>Average Transaction</div>
+                <div className={styles.statValue}>
+                  RWF {Math.round(cashierReport.averageTransactionAmount || 0).toLocaleString()}
+                </div>
               </div>
             </div>
 
             <div className={styles.tableCard} style={{ padding: '24px' }}>
-              <h3 className={styles.sectionTitle}>Revenue Breakdown by Category (Today)</h3>
+              <h3 className={styles.sectionTitle}>Revenue Breakdown by Payment Method</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                {Object.entries(categorySummary).map(([cat, amt]) => (
-                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
-                    <span style={{ fontWeight: 600 }}>{cat}</span>
-                    <span style={{ fontWeight: 700, color: '#0f172a' }}>RWF {amt.toLocaleString()}</span>
+                {cashierReport.paymentMethodSummary.map(method => (
+                  <div key={method.method} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
+                    <span style={{ fontWeight: 600 }}>{method.method} ({method.count})</span>
+                    <span style={{ fontWeight: 700, color: '#0f172a' }}>RWF {method.amount.toLocaleString()}</span>
                   </div>
                 ))}
-                {Object.keys(categorySummary).length === 0 && <div className={styles.empty}>No data recorded for today yet.</div>}
+                {cashierReport.paymentMethodSummary.length === 0 && (
+                  <div className={styles.empty}>No confirmed payments found in selected range.</div>
+                )}
               </div>
+            </div>
+
+            <div className={styles.tableCard} style={{ marginTop: '20px' }}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Paid At</th>
+                    <th>Bill Number</th>
+                    <th>Patient</th>
+                    <th>Method</th>
+                    <th>Reference</th>
+                    <th>Confirmed By</th>
+                    <th className={styles.amount}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashierReport.transactions.map(t => (
+                    <tr key={t.paymentId}>
+                      <td>{new Date(t.paidAt).toLocaleString()}</td>
+                      <td className={styles.billNum}>{t.billNumber}</td>
+                      <td className={styles.patientName}>{t.patientName}</td>
+                      <td>{t.method}</td>
+                      <td>{t.reference || 'N/A'}</td>
+                      <td>{t.confirmedBy}</td>
+                      <td className={styles.amount}>RWF {t.amount.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  {cashierReport.transactions.length === 0 && (
+                    <tr>
+                      <td colSpan="7" className={styles.empty}>No transactions for this period.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {activeTab === 'disputes' && (
+          <div className={styles.reportsPage}>
+            <div className={styles.listControl}>
+              <div className={styles.searchSection}>
+                <h3 className={styles.sectionTitle}>Bill Disputes</h3>
+                <p className={styles.userRole}>Review and resolve patient billing disputes.</p>
+              </div>
+              <div className={styles.filterTabs}>
+                <div
+                  className={`${styles.filterTab} ${disputeFilter === 'open' ? styles.active : ''}`}
+                  onClick={() => setDisputeFilter('open')}
+                >
+                  Open Only
+                </div>
+                <div
+                  className={`${styles.filterTab} ${disputeFilter === 'all' ? styles.active : ''}`}
+                  onClick={() => setDisputeFilter('all')}
+                >
+                  All Disputes
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.tableCard}>
+              {disputesLoading ? (
+                <div className={styles.empty}>Loading disputes...</div>
+              ) : disputes.length === 0 ? (
+                <div className={styles.empty}>No disputes found for the selected filter.</div>
+              ) : (
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Raised At</th>
+                      <th>Bill Number</th>
+                      <th>Patient</th>
+                      <th>Reason</th>
+                      <th>Status</th>
+                      <th className={styles.amount}>Total</th>
+                      <th className={styles.amount}>Paid</th>
+                      <th className={styles.amount}>Balance</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {disputes.map(d => (
+                      <tr key={d.id}>
+                        <td>{new Date(d.raisedAt).toLocaleString()}</td>
+                        <td className={styles.billNum}>{d.billNumber}</td>
+                        <td className={styles.patientName}>{d.patientName}</td>
+                        <td>{d.reason}</td>
+                        <td>
+                          <span className={`${styles.statusBadge} ${d.status === 'Open' || d.status === 'UnderReview' ? styles['status-Open'] : d.status === 'Resolved' ? styles['status-Paid'] : styles['status-Finalized']}`}>
+                            {d.status}
+                          </span>
+                        </td>
+                        <td className={styles.amount}>RWF {Number(d.totalAmount || 0).toLocaleString()}</td>
+                        <td className={styles.amount}>RWF {Number(d.totalPaid || 0).toLocaleString()}</td>
+                        <td className={styles.amount}>RWF {Number(d.balanceDue || 0).toLocaleString()}</td>
+                        <td>
+                          {(d.status === 'Open' || d.status === 'UnderReview') ? (
+                            <div className={styles.disputeActions}>
+                              <button className={styles.resolveBtn} onClick={() => handleResolveDispute(d.id, true)}>Resolve</button>
+                              <button className={styles.rejectBtn} onClick={() => handleResolveDispute(d.id, false)}>Reject</button>
+                            </div>
+                          ) : (
+                            <span className={styles.completedTag}>Closed</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
@@ -272,4 +552,9 @@ export default function BillingDashboard() {
       )}
     </div>
   )
+}
+
+function toDateTimeLocal(date) {
+  const pad = value => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }

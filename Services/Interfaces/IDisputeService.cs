@@ -12,6 +12,9 @@ namespace HospitalBilling.Services.Interfaces
 
         // Get all open disputes (billing staff)
         Task<List<DisputeSummaryDto>> GetOpenDisputesAsync();
+
+        // Get disputes list for billing staff
+        Task<List<DisputeSummaryDto>> GetDisputesAsync(bool openOnly);
     }
 
     public class DisputeSummaryDto
@@ -22,5 +25,9 @@ namespace HospitalBilling.Services.Interfaces
         public string Reason { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public DateTime RaisedAt { get; set; }
+        public string BillStatus { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal BalanceDue { get; set; }
     }
 }

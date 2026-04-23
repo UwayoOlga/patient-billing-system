@@ -53,6 +53,16 @@ namespace HospitalBilling.Controllers
             if (bill == null)
                 return NotFound(new { message = "Bill not found. Check your Bill Number." });
 
+            // ENFORCED SECURITY: If logged in as a patient, you can ONLY view your own bills.
+            if (User.Identity?.IsAuthenticated == true && User.IsInRole("Patient"))
+            {
+                var patientId = GetStaffId();
+                if (bill.PatientId != patientId)
+                {
+                    return Unauthorized(new { message = "Access Denied: This bill does not belong to your account." });
+                }
+            }
+
             return Ok(bill);
         }
 

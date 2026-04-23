@@ -51,31 +51,47 @@ export default function PatientPortal() {
       setBill(data)
       setActiveTab('current')
     } catch (err) {
-      setError('No active bill found with that ID.')
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        setError('Security Error: You can only view bills linked to your own account while logged in.')
+      } else {
+        setError('No active bill found with that ID.')
+      }
       setBill(null)
     } finally {
       setLoading(false)
     }
   }
 
-  async function fetchSecureHistory() {
-    setLoading(true)
+  async function fetchSecureHistory(isAutoRefresh = false) {
+    if (!isAutoRefresh) setLoading(true)
     setError('')
     try {
       const { data } = await api.get(`/bills/history`)
       setHistory(data)
 
       // Automatically set the latest Unpaid/Open bill as the "Current" view for patients
-      // only if they haven't manually selected one yet
+      // if they haven't manually selected one yet OR if they are on the 'current' tab with no bill
       const activeBill = data.find(b => b.status === 'Open' || b.status === 'Finalized' || b.balanceDue > 0)
-      if (activeBill && !bill) {
-        setBill(activeBill)
+      if (activeBill && (!bill || activeTab === 'current')) {
+        // Only update if it's a different bill or a status change
+        if (!bill || bill.id !== activeBill.id || bill.status !== activeBill.status || bill.balanceDue !== activeBill.balanceDue) {
+          setBill(activeBill)
+        }
+      }
+      
+      if (user) {
+        try {
+          const { data: disputesData } = await api.get('/bills/disputes')
+          setDisputes(disputesData)
+        } catch (e) {}
       }
     } catch (err) {
-      console.error("History Load Error:", err);
-      setError(err.response?.data?.message || 'Could not load history.');
+      if (!isAutoRefresh) {
+        console.error("History Load Error:", err);
+        setError(err.response?.data?.message || 'Could not load history.');
+      }
     } finally {
-      setLoading(false)
+      if (!isAutoRefresh) setLoading(false)
     }
   }
 
@@ -183,10 +199,20 @@ export default function PatientPortal() {
 
   useEffect(() => {
     if (user?.role === 'Patient') {
-      if (activeTab === 'history') fetchSecureHistory()
+      // Initial fetch
+      if (activeTab === 'history' || (activeTab === 'current' && !bill)) fetchSecureHistory()
       if (activeTab === 'profile') fetchProfile()
       if (activeTab === 'complaints') fetchDisputes()
       if (activeTab === 'reports') fetchReport()
+
+      // Polling for "automatic" visit detection (every 10 seconds)
+      const poll = setInterval(() => {
+        if (activeTab === 'history' || activeTab === 'current') {
+          fetchSecureHistory(true)
+        }
+      }, 10000)
+
+      return () => clearInterval(poll)
     }
   }, [activeTab, user])
 
@@ -370,10 +396,10 @@ export default function PatientPortal() {
               <h2>Hospital Invoice</h2>
               {user ? (
                 <div style={{ marginBottom: '24px' }}>
-                  <p>You don't have any active bills at the moment.</p>
+                  <p>Search for one of your visit IDs below to view detailed charges.</p>
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', fontSize: '13px', color: '#64748b', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#0ea5e9' }}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-                    <span>Any new visit created at the reception will automatically appear here.</span>
+                    <span>While logged in, you can only search for bills belonging to you. Use "Visit History" to see all your records.</span>
                   </div>
                 </div>
               ) : (
@@ -409,6 +435,17 @@ export default function PatientPortal() {
                   <button onClick={() => { setBill(null); setActiveTab('history'); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>BACK TO HISTORY</button>
                 </div>
               )}
+              
+              {disputes?.some(d => d.billNumber === bill.billNumber && d.status === 'Rejected') && (
+                <div style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '16px 24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e11d48" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ margin: '0 0 4px', color: '#be123c', fontSize: '14px', fontWeight: 800 }}>Dispute Rejected</h4>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#e11d48' }}>One or more of your billing disputes were reviewed and rejected by the administration. The charges have been reinstated to your payable balance. See <strong>Billing Complaints</strong> for details.</p>
+                  </div>
+                </div>
+              )}
+              
               <div className={styles.billHeader}>
                 <div className={styles.billInfo}>
                   <span>Patient Invoice</span>
@@ -548,7 +585,7 @@ export default function PatientPortal() {
                 </div>
 
                 {/* Printable Receipt Footer (Hidden in UI) */}
-                <div className="print-only" style={{ display: 'none', marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
+                <div className={styles.printableReceipt} style={{ marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
                     <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
                     <div style={{ textAlign: 'left' }}>
