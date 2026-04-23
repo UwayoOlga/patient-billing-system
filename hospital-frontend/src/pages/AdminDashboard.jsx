@@ -5,6 +5,7 @@ import api from '../utils/api'
 import styles from './AdminDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
 import ReportsTab from './ReportsTab'
+import logo from '../assets/logo.jpg'
 
 const ROLE_MAP = {
   0: 'Doctor',
@@ -244,7 +245,8 @@ export default function AdminDashboard() {
       {/* Sidebar */}
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
         <div className={styles.sidebarHeader}>
-          <svg className={styles.logoIcon} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+          <img src={logo} alt="Hospital Logo" className={styles.logoImage} style={{ height: '32px', borderRadius: '4px' }} />
+          <h2 style={{ fontSize: '14px', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', margin: 0 }}>HOSPITALBILLING</h2>
         </div>
         <nav className={styles.nav}>
           {navItems.map(item => (

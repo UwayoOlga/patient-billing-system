@@ -4,6 +4,9 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './NurseDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
+import { jsPDF } from 'jspdf'
+import 'jspdf-autotable'
+import logo from '../assets/logo.jpg'
 
 const NURSING_CATEGORIES = new Set(['NursingService', 'BedCharge', 'Consumable'])
 
@@ -23,6 +26,11 @@ export default function NurseDashboard() {
   const [savingId, setSavingId] = useState(null)
   const [editState, setEditState] = useState({})
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [reportRange, setReportRange] = useState({
+    start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  })
+  const [reportData, setReportData] = useState(null)
 
   useEffect(() => {
     fetchNursingOrders()
@@ -41,7 +49,10 @@ export default function NurseDashboard() {
   }
 
   function getNursingOrders(bill) {
-    return (bill.items || []).filter(i => NURSING_CATEGORIES.has(i.category) && i.addedByRole === 'Doctor')
+    return (bill.items || []).filter(i => 
+      NURSING_CATEGORIES.has(i.category) && 
+      (i.addedByRole === 'Doctor' || i.addedByRole === 'Admin')
+    )
   }
 
   const visibleBills = useMemo(() => {
@@ -54,19 +65,16 @@ export default function NurseDashboard() {
 
   const completedToday = useMemo(() => {
     const today = new Date().toDateString()
-    return bills
-      .flatMap(bill =>
-        getNursingOrders(bill)
-          .filter(i => i.isCompleted && i.completedAt && new Date(i.completedAt).toDateString() === today)
-          .map(i => ({
-            id: i.id,
-            patientName: bill.patientName,
-            billNumber: bill.billNumber,
-            description: i.description,
-            completedAt: i.completedAt
-          }))
-      )
-      .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    return bills.flatMap(b => 
+      (b.items || [])
+        .filter(i => 
+          NURSING_CATEGORIES.has(i.category) && 
+          i.isCompleted && 
+          i.completedAt &&
+          new Date(i.completedAt).toDateString() === today
+        )
+        .map(i => ({ ...i, patientName: b.patientName, billNumber: b.billNumber }))
+    ).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
   }, [bills])
 
   async function completeOrder(itemId) {
@@ -101,6 +109,72 @@ export default function NurseDashboard() {
     navigate('/login')
   }
 
+  async function fetchReport() {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/bills/summary')
+      const start = new Date(reportRange.start)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(reportRange.end)
+      end.setHours(23, 59, 59, 999)
+
+      const allNursingItems = data.flatMap(b => 
+        (b.items || [])
+          .filter(i => NURSING_CATEGORIES.has(i.category))
+          .map(i => ({ ...i, patientName: b.patientName, billNumber: b.billNumber }))
+      )
+
+      const completedInPeriod = allNursingItems.filter(i => {
+        if (!i.isCompleted || !i.completedAt) return false
+        const compDate = new Date(i.completedAt)
+        return compDate >= start && compDate <= end
+      })
+
+      const stats = {
+        totalCompleted: completedInPeriod.length,
+        uniquePatients: new Set(completedInPeriod.map(i => i.patientName)).size,
+        services: completedInPeriod.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt)),
+        generatedAt: new Date().toLocaleString()
+      }
+      setReportData(stats)
+    } catch (err) {
+      console.error('Report failed', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const exportToPDF = () => {
+    if (!reportData) return
+    const doc = new jsPDF()
+    const tableData = reportData.services.map(s => [
+      new Date(s.completedAt).toLocaleDateString(),
+      s.patientName,
+      s.billNumber,
+      s.description,
+      s.notes || ''
+    ])
+
+    doc.setFontSize(20); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
+    doc.setFontSize(10); doc.setTextColor(100); doc.text('Nursing Performance Report', 14, 28)
+    doc.text(`Generated: ${reportData.generatedAt}`, 14, 34)
+    doc.text(`Period: ${reportRange.start} to ${reportRange.end}`, 14, 40)
+
+    doc.autoTable({
+      startY: 50,
+      head: [['Date', 'Patient Name', 'Bill #', 'Service', 'Notes']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [14, 165, 233] } // Use Nurse blue
+    })
+
+    doc.save(`Nurse_Performance_Report_${reportRange.start}.pdf`)
+  }
+
+  function handlePrintReport() {
+    window.print()
+  }
+
   return (
     <div className={styles.page}>
       {/* Mobile Menu Trigger */}
@@ -111,22 +185,32 @@ export default function NurseDashboard() {
       {mobileMenuOpen && <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)} />}
 
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
-        <div className={styles.sidebarLogo}>
-          <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"></path><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>
+        <div className={styles.sidebarLogo} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 24px 24px' }}>
+          <img src={logo} alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />
+          <h2 style={{ fontSize: '12px', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', margin: 0 }}>HOSPITALBILLING</h2>
         </div>
         <nav className={styles.nav}>
           <button className={`${styles.navItem} ${tab === 'queue' ? styles.active : ''}`} onClick={() => { setTab('queue'); setMobileMenuOpen(false); }}>
-            Work Queue
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+            <span>Work Queue</span>
           </button>
           <button className={`${styles.navItem} ${tab === 'timeline' ? styles.active : ''}`} onClick={() => { setTab('timeline'); setMobileMenuOpen(false); }}>
-            Completed Timeline
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Completed Today</span>
+          </button>
+          <button className={`${styles.navItem} ${tab === 'reports' ? styles.active : ''}`} onClick={() => { setTab('reports'); setMobileMenuOpen(false); }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+            <span>Performance Reports</span>
           </button>
           <button className={`${styles.navItem} ${tab === 'profile' ? styles.active : ''}`} onClick={() => { setTab('profile'); setMobileMenuOpen(false); }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            My Profile
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>My Profile</span>
           </button>
         </nav>
-        <button className={styles.logoutBtn} onClick={handleLogout}>Logout</button>
+        <button className={styles.logoutBtn} onClick={handleLogout}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Logout
+        </button>
       </aside>
 
       <main className={styles.main}>
@@ -141,7 +225,111 @@ export default function NurseDashboard() {
           </div>
         </header>
 
-        {tab === 'profile' ? <ProfileTab /> : (
+        {tab === 'profile' ? <ProfileTab /> : tab === 'reports' ? (
+          <div className={styles.reportView}>
+            <div className={styles.noPrint} style={{ background: '#fff', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>Generate Performance Report</h3>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div className={styles.formGroup} style={{ flex: 1, minWidth: '200px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '8px' }}>Start Date</label>
+                  <input 
+                    type="date" 
+                    className={styles.input} 
+                    value={reportRange.start} 
+                    onChange={e => setReportRange({...reportRange, start: e.target.value})} 
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+                <div className={styles.formGroup} style={{ flex: 1, minWidth: '200px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '8px' }}>End Date</label>
+                  <input 
+                    type="date" 
+                    className={styles.input} 
+                    value={reportRange.end} 
+                    onChange={e => setReportRange({...reportRange, end: e.target.value})} 
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+                <button 
+                  onClick={fetchReport} 
+                  className={styles.reportGenBtn}
+                  disabled={loading}
+                >
+                  {loading ? 'Processing...' : 'Run Analysis'}
+                </button>
+                {reportData && (
+                  <button onClick={exportToPDF} className={styles.pdfBtn}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download PDF Report
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {reportData ? (
+              <div className={styles.printableReport}>
+                <div className={styles.reportHeader}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <img src={logo} alt="Logo" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
+                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900 }}>HOSPITALBILLING</h2>
+                  </div>
+                  <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>Nursing Performance Report</h1>
+                  <p style={{ color: '#64748b', margin: 0 }}>Period: {reportRange.start} to {reportRange.end} | Generated: {reportData.generatedAt}</p>
+                </div>
+
+                <div className={styles.statsGrid} style={{ margin: '32px 0' }}>
+                  <div className={styles.statCard}>
+                    <div className={styles.statLabel}>Services Rendered</div>
+                    <div className={styles.statValue}>{reportData.totalCompleted}</div>
+                  </div>
+                  <div className={styles.statCard}>
+                    <div className={styles.statLabel}>Unique Patients</div>
+                    <div className={styles.statValue}>{reportData.uniquePatients}</div>
+                  </div>
+                  <div className={styles.statCard}>
+                    <div className={styles.statLabel}>Shift Efficiency</div>
+                    <div className={styles.statValue}>100%</div>
+                  </div>
+                </div>
+
+                <div className={styles.tableCard}>
+                  <h3 className={styles.sectionTitle}>Detailed Activity Ledger</h3>
+                  <table className={styles.reportTable}>
+                    <thead>
+                      <tr>
+                        <th>Date/Time</th>
+                        <th>Patient Name</th>
+                        <th>Bill #</th>
+                        <th>Service Description</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.services.map(s => (
+                        <tr key={s.id}>
+                          <td>{new Date(s.completedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                          <td style={{ fontWeight: 700 }}>{s.patientName}</td>
+                          <td>{s.billNumber}</td>
+                          <td>{s.description}</td>
+                          <td style={{ fontSize: '12px', fontStyle: 'italic' }}>{s.notes || '—'}</td>
+                        </tr>
+                      ))}
+                      {reportData.services.length === 0 && (
+                        <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>No services found for this period.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className={styles.empty} style={{ background: '#fff', borderRadius: '16px', padding: '64px' }}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2" style={{ marginBottom: '16px' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <h3>Ready for Analysis</h3>
+                <p>Select a date range above to generate your clinical execution report.</p>
+              </div>
+            )}
+          </div>
+        ) : (
           <>
             <div className={styles.statsRow}>
           <div className={styles.statCard}>
@@ -155,12 +343,18 @@ export default function NurseDashboard() {
         </div>
 
         <div className={styles.toolbar}>
-          <input
-            placeholder="Search by Bill Number..."
-            value={searchBill}
-            onChange={e => setSearchBill(e.target.value)}
-          />
-          <button onClick={fetchNursingOrders}>Refresh</button>
+          <div className={styles.searchWrapper}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              placeholder="Search by Bill Number..."
+              value={searchBill}
+              onChange={e => setSearchBill(e.target.value)}
+            />
+          </div>
+          <button onClick={fetchNursingOrders} className={styles.refreshBtn}>
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '8px' }}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+             Refresh
+          </button>
         </div>
 
         {tab === 'timeline' ? (

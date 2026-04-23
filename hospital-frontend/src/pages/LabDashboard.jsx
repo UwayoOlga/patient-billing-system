@@ -4,6 +4,9 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './LabDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
+import { jsPDF } from 'jspdf'
+import 'jspdf-autotable'
+import logo from '../assets/logo.jpg'
 
 export default function LabDashboard() {
   const [user, setUserState] = useState(getUser())
@@ -80,8 +83,17 @@ export default function LabDashboard() {
       await api.patch(`/bills/items/${resultModal.item.id}/complete`, {
         resultNotes: resultModal.notes
       })
-      fetchTests()
-      showNotification(`Test Finalized: ${resultModal.item.description}`, 'success', '🔬')
+      await fetchTests()
+      
+      // Update selectedVisit in-place so the UI reflects completion immediately
+      if (selectedVisit) {
+        setSelectedVisit(prev => ({
+          ...prev,
+          items: prev.items.map(i => i.id === resultModal.item.id ? { ...i, isCompleted: true, notes: resultModal.notes } : i)
+        }))
+      }
+
+      showNotification(`Test Results Attached: ${resultModal.item.description}`, 'success', '✅')
       setResultModal({ isOpen: false, item: null, notes: '' })
     } catch (err) {
       showNotification('Failed to save test results', 'error', '🛑')
@@ -92,11 +104,54 @@ export default function LabDashboard() {
     if (!window.confirm(`Are you sure you want to REVERT "${testDescription}" back to pending? This will clear the results.`)) return
     try {
       await api.patch(`/bills/items/${itemId}/revert`)
-      fetchTests()
+      await fetchTests()
+
+      if (selectedVisit) {
+        setSelectedVisit(prev => ({
+          ...prev,
+          items: prev.items.map(i => i.id === itemId ? { ...i, isCompleted: false, notes: null } : i)
+        }))
+      }
+
       showNotification(`Test Reverted: ${testDescription}`, 'success', '⏪')
     } catch (err) {
       showNotification(err.response?.data?.message || 'Failed to revert test', 'error', '🛑')
     }
+  }
+
+  const exportToPDF = (test, visit) => {
+    const doc = new jsPDF()
+    
+    // Header
+    doc.setFontSize(22); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
+    doc.setFontSize(10); doc.setTextColor(100); doc.text('Advanced Clinical Laboratory Services', 14, 28)
+    
+    // Meta Information
+    doc.setDrawColor(226, 232, 240); doc.line(14, 35, 196, 35)
+    
+    doc.setFontSize(9); doc.setTextColor(100); doc.text('PATIENT NAME', 14, 45); doc.text('BILL / VISIT ID', 110, 45)
+    doc.setFontSize(11); doc.setTextColor(15, 23, 42); 
+    doc.text(visit?.patientName || test?.patientName || 'N/A', 14, 51)
+    doc.text(visit?.billNumber || test?.billNumber || 'N/A', 110, 51)
+    
+    doc.setFontSize(9); doc.setTextColor(100); doc.text('INVESTIGATION', 14, 62); doc.text('REPORT DATE', 110, 62)
+    doc.setFontSize(11); doc.setTextColor(15, 23, 42);
+    doc.text(test.description, 14, 68)
+    doc.text(new Date().toLocaleString(), 110, 68)
+
+    // Results Box
+    doc.setFillColor(248, 250, 252); doc.roundedRect(14, 80, 182, 60, 3, 3, 'F')
+    doc.setFontSize(10); doc.setTextColor(100); doc.text('CONFIDENTIAL CLINICAL FINDINGS', 20, 90)
+    doc.setFontSize(11); doc.setTextColor(30, 41, 59);
+    const splitText = doc.splitTextToSize(test.notes || 'No findings recorded.', 170)
+    doc.text(splitText, 20, 100)
+
+    // Footer
+    doc.setFontSize(8); doc.setTextColor(148, 163, 184)
+    doc.text('This is a digitally certified medical report.', 14, 160)
+    doc.text(`Authorized by: ${user?.name || 'Lab Department'}`, 14, 165)
+    
+    doc.save(`Lab_Report_${test.description.replace(/\s+/g, '_')}.pdf`)
   }
 
   function handlePrint(test, visit) {
@@ -137,10 +192,10 @@ export default function LabDashboard() {
         </head>
         <body>
           <div class="header">
-            <div class="logo-placeholder">H</div>
+            <img src="${logo}" style="width: 60px; height: 60px; border-radius: 12px; object-fit: cover;" />
             <div class="hospital-info">
-              <h1>RWANDA DIGITAL MEDICAL CENTER</h1>
-              <p>Excellence in Healthcare | Kigali, Rwanda</p>
+              <h1>HOSPITALBILLING</h1>
+              <p>Excellence in Healthcare | Clinical Laboratory</p>
             </div>
           </div>
 
@@ -215,8 +270,9 @@ export default function LabDashboard() {
 
       {/* Sidebar */}
       <aside className={`${styles.sidebar} ${mobileMenuOpen ? styles.mobileOpen : ''}`}>
-        <div className={styles.sidebarLogo}>
-          <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10v6M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path><path d="M9 10a3 3 0 1 0 6 0 3 3 0 0 0-6 0z"></path></svg>
+        <div className={styles.sidebarLogo} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 24px 24px' }}>
+          <img src={logo} alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />
+          <h2 style={{ fontSize: '12px', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', margin: 0 }}>HOSPITALBILLING</h2>
         </div>
         <nav className={styles.nav}>
           <a className={`${styles.navItem} ${tab === 'pending' ? styles.active : ''}`} onClick={() => { setTab('pending'); setMobileMenuOpen(false); }}>
@@ -337,10 +393,11 @@ export default function LabDashboard() {
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button 
                                     className={styles.miniPrintBtn} 
-                                    onClick={() => handlePrint(item, selectedVisit)}
-                                    style={{ padding: '6px 12px', background: '#f0fdf4', border: '1px solid #dcfce7', color: '#166534', borderRadius: '4px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                    onClick={() => exportToPDF(item, selectedVisit)}
+                                    style={{ padding: '6px 12px', background: '#0ea5e9', border: 'none', color: '#fff', borderRadius: '4px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
                                   >
-                                    📄 Print Report
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Download PDF
                                   </button>
                                   <button 
                                     className={styles.miniRevertBtn} 

@@ -7,6 +7,7 @@ import {
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
+import logo from '../assets/logo.jpg'
 import styles from './ReportsTab.module.css'
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -68,6 +69,28 @@ export default function ReportsTab() {
     XLSX.writeFile(workbook, `Hospital_Revenue_Report_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
+  const exportToPDF = () => {
+    const doc = new jsPDF()
+    const tableData = filteredLedger.map(p => [
+      new Date(p.paidAt).toLocaleDateString(),
+      p.patientName,
+      p.billNumber,
+      p.method,
+      `RWF ${p.amount.toLocaleString()}`
+    ])
+    doc.setFontSize(20); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
+    doc.setFontSize(10); doc.setTextColor(100); doc.text('Financial Revenue Report', 14, 28)
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 34)
+    doc.autoTable({
+      startY: 45,
+      head: [['Date', 'Patient Name', 'Bill #', 'Method', 'Amount']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [15, 23, 42] }
+    })
+    doc.save(`Revenue_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+  }
+
   const handlePrintReport = () => {
     const printWindow = window.open('', '_blank');
     const content = `
@@ -101,9 +124,9 @@ export default function ReportsTab() {
         </head>
         <body>
           <div class="header">
-            <div class="logo-placeholder">H</div>
+            <img src="${logo}" style="width: 60px; height: 60px; border-radius: 12px; object-fit: cover;" />
             <div class="hospital-info">
-              <h1>RWANDA DIGITAL MEDICAL CENTER</h1>
+              <h1>HOSPITALBILLING</h1>
               <p>Excellence in Healthcare | Financial Audit Report</p>
             </div>
           </div>
@@ -190,7 +213,7 @@ export default function ReportsTab() {
         </div>
         <div className={styles.actions}>
           <button className={styles.excelBtn} onClick={exportToExcel}>Export Excel</button>
-          <button className={styles.pdfBtn} onClick={handlePrintReport}>Download PDF Report</button>
+          <button className={styles.pdfBtn} onClick={exportToPDF}>Download PDF Report</button>
         </div>
       </div>
 
