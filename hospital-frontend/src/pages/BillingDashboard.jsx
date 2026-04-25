@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
+import { jsPDF } from 'jspdf'
+import 'jspdf-autotable'
 import styles from './BillingDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
 import logo from '../assets/logo.jpg'
@@ -27,6 +29,7 @@ export default function BillingDashboard() {
 
   const [disputes, setDisputes] = useState([])
   const [disputeLoading, setDisputeLoading] = useState(false)
+  const [resolvingId, setResolvingId] = useState(null)
 
   useEffect(() => { fetchBills() }, [])
 
@@ -43,11 +46,15 @@ export default function BillingDashboard() {
   }
 
   async function handleResolveDispute(disputeId, isResolved, notes = '') {
+    setResolvingId(disputeId)
     try {
       await api.patch('/disputes/resolve', { disputeId, isResolved, resolutionNotes: notes })
-      fetchDisputes()
+      await fetchDisputes()
     } catch (err) {
       console.error('Failed to resolve dispute', err)
+      alert(err.response?.data?.message || 'Failed to update complaint. Please try again.')
+    } finally {
+      setResolvingId(null)
     }
   }
 
@@ -86,14 +93,135 @@ export default function BillingDashboard() {
 
   // Reporting Logic
   const today = new Date().toDateString()
-  const billsToday = bills.filter(b => new Date(b.createdAt).toDateString() === today)
-  const revenueToday = billsToday.reduce((acc, b) => acc + b.totalPaid, 0)
+  const [reportRange, setReportRange] = useState('today')
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().split('T')[0])
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().split('T')[0])
+
+  function getReportDates() {
+    const now = new Date()
+    if (reportRange === 'today') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      return { start, end: now }
+    }
+    if (reportRange === 'week') {
+      const start = new Date(now); start.setDate(now.getDate() - 6); start.setHours(0,0,0,0)
+      return { start, end: now }
+    }
+    if (reportRange === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1)
+      return { start, end: now }
+    }
+    // custom
+    return { start: new Date(customStart), end: new Date(customEnd + 'T23:59:59') }
+  }
+
+  const { start: rStart, end: rEnd } = getReportDates()
+
+  const reportBills = bills.filter(b => {
+    const d = new Date(b.createdAt)
+    return d >= rStart && d <= rEnd
+  })
+
+  const paidBills = reportBills.filter(b => b.status === 'Paid')
+  const totalCollected = reportBills.reduce((s, b) => s + (b.totalPaid || 0), 0)
+  const totalOutstandingReport = reportBills.reduce((s, b) => s + (b.balanceDue || 0), 0)
+  const totalInsurance = reportBills.reduce((s, b) => s + (b.totalInsurance || 0), 0)
+  const totalBilled = reportBills.reduce((s, b) => s + (b.totalAmount || 0), 0)
+  const collectionRate = totalBilled > 0 ? ((totalCollected / (totalBilled - totalInsurance)) * 100).toFixed(1) : '0.0'
+
   const categorySummary = {}
-  billsToday.forEach(b => {
-    b.items.forEach(i => {
-      categorySummary[i.category] = (categorySummary[i.category] || 0) + i.subtotal
+  reportBills.forEach(b => {
+    b.items?.forEach(i => {
+      if (!i.isCompleted) return
+      const cat = i.category || 'Other'
+      if (!categorySummary[cat]) categorySummary[cat] = { count: 0, amount: 0 }
+      categorySummary[cat].count += 1
+      categorySummary[cat].amount += i.subtotal || 0
     })
   })
+
+  const paymentMethods = {}
+  reportBills.forEach(b => {
+    b.payments?.forEach(p => {
+      const m = p.method || 'Unknown'
+      paymentMethods[m] = (paymentMethods[m] || 0) + p.amount
+    })
+  })
+
+  // Recent payments list
+  const recentPayments = reportBills
+    .flatMap(b => (b.payments || []).map(p => ({ ...p, patientName: b.patientName, billNumber: b.billNumber })))
+    .sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))
+    .slice(0, 20)
+
+  function exportReportPDF() {
+    const doc = new jsPDF()
+    const rangeLabel = reportRange === 'custom'
+      ? `${customStart} to ${customEnd}`
+      : reportRange === 'today' ? new Date().toLocaleDateString()
+      : reportRange === 'week' ? 'Last 7 Days'
+      : 'This Month'
+
+    doc.setFontSize(20); doc.setTextColor(15, 23, 42)
+    doc.text('HOSPITALBILLING', 14, 20)
+    doc.setFontSize(10); doc.setTextColor(100)
+    doc.text(`Cashier Financial Report — ${rangeLabel}`, 14, 27)
+    doc.setDrawColor(226, 232, 240); doc.line(14, 32, 196, 32)
+
+    // KPI summary
+    doc.autoTable({
+      startY: 38,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Total Billed', `RWF ${totalBilled.toLocaleString()}`],
+        ['Insurance Coverage', `RWF ${totalInsurance.toLocaleString()}`],
+        ['Total Collected', `RWF ${totalCollected.toLocaleString()}`],
+        ['Outstanding Balance', `RWF ${totalOutstandingReport.toLocaleString()}`],
+        ['Collection Rate', `${collectionRate}%`],
+        ['Total Visits', reportBills.length],
+        ['Fully Paid', paidBills.length],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] },
+      columnStyles: { 1: { halign: 'right' } }
+    })
+
+    // Category breakdown
+    let y = doc.lastAutoTable.finalY + 12
+    doc.setFontSize(12); doc.setTextColor(15, 23, 42)
+    doc.text('Revenue by Service Category', 14, y)
+    doc.autoTable({
+      startY: y + 4,
+      head: [['Category', 'Items', 'Revenue']],
+      body: Object.entries(categorySummary).sort((a,b) => b[1].amount - a[1].amount).map(([cat, v]) => [
+        cat, v.count, `RWF ${v.amount.toLocaleString()}`
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [14, 165, 233] },
+      columnStyles: { 2: { halign: 'right' } }
+    })
+
+    // Payments table
+    y = doc.lastAutoTable.finalY + 12
+    doc.setFontSize(12); doc.setTextColor(15, 23, 42)
+    doc.text('Recent Payments', 14, y)
+    doc.autoTable({
+      startY: y + 4,
+      head: [['Patient', 'Bill #', 'Method', 'Amount', 'Date']],
+      body: recentPayments.map(p => [
+        p.patientName,
+        p.billNumber,
+        p.method?.toUpperCase(),
+        `RWF ${p.amount?.toLocaleString()}`,
+        new Date(p.paidAt).toLocaleDateString()
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [5, 150, 105] },
+      columnStyles: { 3: { halign: 'right' } }
+    })
+
+    doc.save(`Cashier_Report_${rangeLabel.replace(/ /g,'_')}.pdf`)
+  }
 
   const navItems = [
     {
@@ -187,13 +315,15 @@ export default function BillingDashboard() {
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     onClick={() => handleResolveDispute(d.id, true, 'Resolved by billing staff')}
-                    style={{ background: '#059669', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+                    disabled={resolvingId === d.id}
+                    style={{ background: '#059669', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, opacity: resolvingId === d.id ? 0.6 : 1 }}
                   >
-                    Resolve & Remove
+                    {resolvingId === d.id ? 'Processing...' : 'Resolve & Remove'}
                   </button>
                   <button
                     onClick={() => handleResolveDispute(d.id, false, 'Rejected by billing staff')}
-                    style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+                    disabled={resolvingId === d.id}
+                    style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, opacity: resolvingId === d.id ? 0.6 : 1 }}
                   >
                     Reject
                   </button>
@@ -302,28 +432,127 @@ export default function BillingDashboard() {
 
         {activeTab === 'reports' && (
           <div className={styles.reportsPage}>
-            <div className={styles.statsRow}>
-              <div className={styles.statCard}>
-                <div className={styles.statLabel}>Revenue Collected Today</div>
-                <div className={styles.statValue} style={{ color: '#059669' }}>RWF {revenueToday.toLocaleString()}</div>
+            {/* Range Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              <div className={styles.filterTabs}>
+                {[['today','Today'],['week','Last 7 Days'],['month','This Month'],['custom','Custom']].map(([val, label]) => (
+                  <div key={val} className={`${styles.filterTab} ${reportRange === val ? styles.active : ''}`} onClick={() => setReportRange(val)}>{label}</div>
+                ))}
               </div>
-              <div className={styles.statCard}>
-                <div className={styles.statLabel}>New Visits Created Today</div>
-                <div className={styles.statValue}>{billsToday.length}</div>
+              {reportRange === 'custom' && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                    style={{ padding: '6px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px' }} />
+                  <span style={{ color: '#64748b', fontSize: '13px' }}>to</span>
+                  <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                    style={{ padding: '6px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px' }} />
+                </div>
+              )}
+              <button onClick={exportReportPDF}
+                style={{ marginLeft: 'auto', background: '#0f172a', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export PDF
+              </button>
+            </div>
+
+            {/* KPI Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+              {[
+                { label: 'Total Billed', value: `RWF ${totalBilled.toLocaleString()}`, color: '#0f172a' },
+                { label: 'Total Collected', value: `RWF ${totalCollected.toLocaleString()}`, color: '#059669' },
+                { label: 'Outstanding', value: `RWF ${totalOutstandingReport.toLocaleString()}`, color: '#ef4444' },
+                { label: 'Insurance Covered', value: `RWF ${totalInsurance.toLocaleString()}`, color: '#8b5cf6' },
+                { label: 'Collection Rate', value: `${collectionRate}%`, color: '#0ea5e9' },
+                { label: 'Total Visits', value: reportBills.length, color: '#0f172a' },
+                { label: 'Fully Paid', value: paidBills.length, color: '#059669' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className={styles.statCard}>
+                  <div className={styles.statLabel}>{label}</div>
+                  <div className={styles.statValue} style={{ fontSize: '20px', color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+              {/* Category Breakdown */}
+              <div className={styles.tableCard} style={{ padding: '24px' }}>
+                <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '16px', color: '#0f172a' }}>Revenue by Service Category</div>
+                {Object.keys(categorySummary).length === 0 ? (
+                  <div className={styles.empty}>No completed services in this period.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {Object.entries(categorySummary).sort((a,b) => b[1].amount - a[1].amount).map(([cat, v]) => {
+                      const pct = totalCollected > 0 ? (v.amount / totalBilled * 100).toFixed(0) : 0
+                      return (
+                        <div key={cat}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                            <span style={{ fontWeight: 600 }}>{cat}</span>
+                            <span style={{ color: '#64748b' }}>{v.count} items · <strong style={{ color: '#0f172a' }}>RWF {v.amount.toLocaleString()}</strong></span>
+                          </div>
+                          <div style={{ background: '#f1f5f9', borderRadius: '99px', height: '6px' }}>
+                            <div style={{ background: '#0ea5e9', width: `${pct}%`, height: '6px', borderRadius: '99px', transition: 'width 0.4s' }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Methods */}
+              <div className={styles.tableCard} style={{ padding: '24px' }}>
+                <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '16px', color: '#0f172a' }}>Payment Methods</div>
+                {Object.keys(paymentMethods).length === 0 ? (
+                  <div className={styles.empty}>No payments recorded in this period.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {Object.entries(paymentMethods).map(([method, amt]) => (
+                      <div key={method} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: method === 'momo' ? '#f59e0b' : '#3b82f6' }} />
+                          <span style={{ fontWeight: 600, fontSize: '14px', textTransform: 'uppercase' }}>{method}</span>
+                        </div>
+                        <span style={{ fontWeight: 800, color: '#059669' }}>RWF {amt.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className={styles.tableCard} style={{ padding: '24px' }}>
-              <h3 className={styles.sectionTitle}>Revenue Breakdown by Category (Today)</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                {Object.entries(categorySummary).map(([cat, amt]) => (
-                  <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
-                    <span style={{ fontWeight: 600 }}>{cat}</span>
-                    <span style={{ fontWeight: 700, color: '#0f172a' }}>RWF {amt.toLocaleString()}</span>
-                  </div>
-                ))}
-                {Object.keys(categorySummary).length === 0 && <div className={styles.empty}>No data recorded for today yet.</div>}
+            {/* Recent Payments Table */}
+            <div className={styles.tableCard}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, fontSize: '15px' }}>
+                Recent Payments ({recentPayments.length})
               </div>
+              {recentPayments.length === 0 ? (
+                <div className={styles.empty}>No payments in this period.</div>
+              ) : (
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Patient</th>
+                      <th>Bill #</th>
+                      <th>Method</th>
+                      <th>Reference</th>
+                      <th style={{ textAlign: 'right' }}>Amount</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentPayments.map((p, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{p.patientName}</td>
+                        <td className={styles.billNum}>{p.billNumber}</td>
+                        <td><span style={{ background: p.method === 'momo' ? '#fef3c7' : '#eff6ff', color: p.method === 'momo' ? '#92400e' : '#1e40af', padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>{p.method}</span></td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '12px', color: '#64748b' }}>{p.reference}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: '#059669' }}>RWF {p.amount?.toLocaleString()}</td>
+                        <td style={{ color: '#64748b', fontSize: '13px' }}>{new Date(p.paidAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}

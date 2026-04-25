@@ -170,6 +170,23 @@ namespace HospitalBilling.Controllers
         }
 
         /// <summary>
+        /// Doctor marks their clinical work as done (moves visit from In Progress to Completed).
+        /// </summary>
+        [Authorize(Roles = "Doctor,Admin")]
+        [HttpPatch("{billId}/doctor-complete")]
+        public async Task<IActionResult> DoctorCompleteBill(int billId)
+        {
+            var bill = await _db.Bills.FindAsync(billId);
+            if (bill == null) return NotFound(new { message = "Visit not found." });
+            if (bill.Status != BillStatus.Open)
+                return BadRequest(new { message = "Visit is not open." });
+
+            bill.Status = BillStatus.DoctorCompleted;
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "Visit marked as completed by doctor." });
+        }
+
+        /// <summary>
         /// Billing staff finalizes the bill (locks it for payment).
         /// </summary>
         [Authorize(Roles = "Cashier,Admin")]
@@ -230,6 +247,8 @@ namespace HospitalBilling.Controllers
                 b.BillNumber,
                 b.PatientName,
                 b.Status,
+                b.Urgency,
+                b.CreatedAt,
                 b.BalanceDue,
                 b.AssignedDoctorName,
                 b.Items

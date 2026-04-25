@@ -24,6 +24,11 @@ export default function PatientPortal() {
     start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   })
+  const [payStep, setPayStep] = useState('method') // 'method' | 'details' | 'confirm' | 'success'
+  const [payPhone, setPayPhone] = useState('')
+  const [payAccountName, setPayAccountName] = useState('')
+  const [payBankName, setPayBankName] = useState('')
+  const [payReference, setPayReference] = useState('')
   const [isPaying, setIsPaying] = useState(false)
   const [payMethod, setPayMethod] = useState('momo')
   const [loading, setLoading] = useState(false)
@@ -33,6 +38,8 @@ export default function PatientPortal() {
   const [registrationSuccess, setRegistrationSuccess] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
   const [activeDisputeItem, setActiveDisputeItem] = useState(null)
+  const [disputeLoading, setDisputeLoading] = useState(false)
+  const [disputeError, setDisputeError] = useState('')
 
   useEffect(() => {
     if (searchParams.get('bill')) {
@@ -50,6 +57,11 @@ export default function PatientPortal() {
       })
       setBill(data)
       setActiveTab('current')
+      setPayStep('method')
+      setPayPhone('')
+      setPayReference('')
+      setPayBankName('')
+      setPayAccountName('')
     } catch (err) {
       setError('No active bill found with that ID.')
       setBill(null)
@@ -66,9 +78,9 @@ export default function PatientPortal() {
       setHistory(data)
 
       // Automatically set the latest Unpaid/Open bill as the "Current" view for patients
-      // only if they haven't manually selected one yet
+      // only if they haven't manually selected one yet AND they're on the history tab
       const activeBill = data.find(b => b.status === 'Open' || b.status === 'Finalized' || b.balanceDue > 0)
-      if (activeBill && !bill) {
+      if (activeBill && !bill && activeTab === 'history') {
         setBill(activeBill)
       }
     } catch (err) {
@@ -238,28 +250,92 @@ export default function PatientPortal() {
   }
 
   async function handlePay() {
-    if (!bill) return;
-    setIsPaying(true);
-    setError('');
+    if (!bill) return
+    setIsPaying(true)
+    setError('')
     try {
+      const ref = payMethod === 'momo'
+        ? `MOMO-${payPhone}-${Math.random().toString(36).substring(2,7).toUpperCase()}`
+        : `BANK-${payBankName.replace(/\s/g,'-').toUpperCase()}-${Math.random().toString(36).substring(2,7).toUpperCase()}`
       await api.post('/payment/patient-pay', {
         billId: bill.id,
         amount: bill.balanceDue,
-        method: payMethod,
-        reference: payMethod === 'momo' ? 'MOMO-' + Math.random().toString(36).substring(7).toUpperCase() : 'BANK-' + Math.random().toString(36).substring(7).toUpperCase()
-      });
-      // Refresh bill
-      await fetchBill(bill.billNumber);
+        method: payMethod === 'momo' ? 'Mobile Money' : 'Bank Transfer',
+        reference: ref
+      })
+      setPayStep('success')
+      await fetchBill(bill.billNumber)
     } catch (err) {
-      console.error("Payment Error:", err);
-      setError(err.response?.data?.message || 'Payment failed. Please try again.');
+      console.error('Payment Error:', err)
+      setError(err.response?.data?.message || 'Payment failed. Please try again.')
     } finally {
-      setIsPaying(false);
+      setIsPaying(false)
     }
   }
 
   function handlePrintReceipt() {
-    window.print();
+    if (!bill) return
+    const doc = new jsPDF()
+
+    // Header
+    doc.setFontSize(22); doc.setTextColor(15, 23, 42)
+    doc.text('HOSPITALBILLING', 14, 22)
+    doc.setFontSize(10); doc.setTextColor(100)
+    doc.text('Official Payment Receipt', 14, 28)
+    doc.setDrawColor(226, 232, 240); doc.line(14, 33, 196, 33)
+
+    // Patient & bill info
+    doc.setFontSize(9); doc.setTextColor(100)
+    doc.text('RECEIPT TO', 14, 43); doc.text('BILL NUMBER', 110, 43)
+    doc.setFontSize(11); doc.setTextColor(15, 23, 42)
+    doc.text(bill.patientName || '', 14, 49)
+    doc.text(bill.billNumber || '', 110, 49)
+
+    doc.setFontSize(9); doc.setTextColor(100)
+    doc.text('RECEIPT DATE', 14, 59); doc.text('STATUS', 110, 59)
+    doc.setFontSize(11); doc.setTextColor(15, 23, 42)
+    doc.text(new Date().toLocaleDateString(), 14, 65)
+    doc.text(bill.status || '', 110, 65)
+
+    // Items table
+    const completedItems = bill.items?.filter(i => i.isCompleted && !i.isDisputed) || []
+    doc.autoTable({
+      startY: 75,
+      head: [['Description', 'Qty', 'Unit Price', 'Subtotal']],
+      body: completedItems.map(i => [
+        i.description,
+        i.quantity,
+        `RWF ${i.unitPrice?.toLocaleString()}`,
+        `RWF ${i.subtotal?.toLocaleString()}`
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] }
+    })
+
+    const finalY = (doc.lastAutoTable?.finalY || 75) + 10
+
+    // Summary
+    doc.autoTable({
+      startY: finalY,
+      body: [
+        ['Total Charges', `RWF ${bill.totalAmount?.toLocaleString()}`],
+        ['Insurance Coverage', `- RWF ${bill.totalInsurance?.toLocaleString()}`],
+        ['Patient Liability', `RWF ${bill.patientLiability?.toLocaleString()}`],
+        ['Total Paid', `RWF ${bill.totalPaid?.toLocaleString()}`],
+        ['Balance Due', `RWF ${bill.balanceDue?.toLocaleString()}`],
+      ],
+      theme: 'plain',
+      columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right' } },
+      styles: { fontSize: 11 }
+    })
+
+    // Footer
+    const footerY = (doc.lastAutoTable?.finalY || finalY) + 20
+    doc.setFontSize(9); doc.setTextColor(150)
+    doc.text('This is a computer-generated receipt. No signature required.', 14, footerY)
+    doc.text('RWANDA DIGITAL MEDICAL CENTER', 14, footerY + 6)
+
+    doc.save(`Receipt_${bill.billNumber}.pdf`)
   }
 
   async function handleUpdateProfile(e) {
@@ -279,8 +355,9 @@ export default function PatientPortal() {
 
   async function handleRaiseDispute(e) {
     e.preventDefault()
-    if (!activeDisputeItem || !disputeReason) return
-    setLoading(true)
+    if (!activeDisputeItem || !disputeReason.trim()) return
+    setDisputeLoading(true)
+    setDisputeError('')
     try {
       await api.post(`/bills/item/${activeDisputeItem.id}/dispute`, JSON.stringify(disputeReason), {
         headers: { 'Content-Type': 'application/json' }
@@ -289,9 +366,9 @@ export default function PatientPortal() {
       setDisputeReason('')
       if (bill) await fetchBill(bill.billNumber)
     } catch (err) {
-      setError('Failed to submit dispute.')
+      setDisputeError(err.response?.data?.message || 'Failed to submit complaint. Please try again.')
     } finally {
-      setLoading(false)
+      setDisputeLoading(false)
     }
   }
 
@@ -314,7 +391,7 @@ export default function PatientPortal() {
     <div className={styles.patientPortal}>
       {/* Top Navbar */}
       <nav className={styles.topNav}>
-        <div className={styles.brand} onClick={() => { setActiveTab('history'); setError(''); }}>
+        <div className={styles.brand} onClick={() => { setActiveTab('current'); setError(''); }}>
           <img src={logo} alt="Logo" className={styles.logoImage} />
           <span className={styles.brandText}>HOSPITALBILLING</span>
         </div>
@@ -324,7 +401,15 @@ export default function PatientPortal() {
             <button
               key={item.key}
               className={`${styles.navItem} ${activeTab === item.key ? styles.active : ''}`}
-              onClick={() => { setActiveTab(item.key); setError(''); }}
+              onClick={() => {
+                const protectedTabs = ['reports', 'profile', 'complaints', 'history']
+                if (protectedTabs.includes(item.key) && !user) {
+                  setActiveTab('history') // shows login/register
+                } else {
+                  setActiveTab(item.key)
+                }
+                setError('')
+              }}
             >
               {item.icon}
               {item.label}
@@ -385,10 +470,9 @@ export default function PatientPortal() {
                 <input
                   type="text"
                   className={styles.input}
-                  placeholder="Enter Bill ID (e.g. BILL-2024...)"
+                  placeholder="Enter Bill ID (e.g. BILL-20260423-ABC123)"
                   value={billNumber}
                   onChange={e => setBillNumber(e.target.value.toUpperCase().trim())}
-                  pattern="^BILL-[0-9]{8}-[A-Z0-9]+$"
                   required
                 />
                 <button type="submit" className={styles.btn} disabled={loading}>
@@ -400,7 +484,7 @@ export default function PatientPortal() {
 
           {activeTab === 'current' && bill && (
             <div className={styles.billContainer}>
-              {user && bill.patientId === user.id && (
+              {user && bill.patientId === (user.patientId ?? user.id) && (
                 <div style={{ background: '#0ea5e9', color: '#fff', padding: '8px 24px', fontSize: '12px', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -448,7 +532,7 @@ export default function PatientPortal() {
                         <div className={styles.itemPrice} style={!item.isCompleted ? { color: '#94a3b8', textDecoration: 'line-through' } : {}}>
                           RWF {item.subtotal.toLocaleString()}
                         </div>
-                        {item.isCompleted && !item.isDisputed && (
+                        {item.isCompleted && !item.isDisputed && user?.role === 'Patient' && (
                           <button
                             className={styles.reportBtn}
                             onClick={() => setActiveDisputeItem(item)}
@@ -461,27 +545,7 @@ export default function PatientPortal() {
                   ))}
                 </div>
 
-                {activeDisputeItem && (
-                  <div className={styles.disputeOverlay}>
-                    <div className={styles.disputeForm}>
-                      <h3>Report Issue: {activeDisputeItem.description}</h3>
-                      <p>Describe the issue with this charge (e.g., incorrect price, service not received).</p>
-                      <form onSubmit={handleRaiseDispute}>
-                        <textarea
-                          className={styles.textarea}
-                          placeholder="Enter details here..."
-                          value={disputeReason}
-                          onChange={e => setDisputeReason(e.target.value)}
-                          required
-                        />
-                        <div className={styles.modalActions}>
-                          <button type="button" onClick={() => setActiveDisputeItem(null)} className={styles.backBtn}>Cancel</button>
-                          <button type="submit" className={styles.payBtn} style={{ padding: '8px 24px' }}>Submit Complaint</button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
+
 
                 <h3 className={styles.sectionTitle}>Financial Summary</h3>
                 <div className={styles.summary}>
@@ -511,29 +575,248 @@ export default function PatientPortal() {
                 <div className={`${styles.paySection} no-print`}>
                   {bill.balanceDue > 0 ? (
                     <div className={styles.payPrompt}>
-                      <h3>Complete Your Payment</h3>
-                      <p>Choose your preferred payment method to clear the balance.</p>
-                      <div className={styles.methodGrid}>
-                        <button
-                          className={`${styles.methodBtn} ${payMethod === 'momo' ? styles.activeMethod : ''}`}
-                          onClick={() => setPayMethod('momo')}
-                        >
-                          Mobile Money
-                        </button>
-                        <button
-                          className={`${styles.methodBtn} ${payMethod === 'bank' ? styles.activeMethod : ''}`}
-                          onClick={() => setPayMethod('bank')}
-                        >
-                          Bank Transfer
-                        </button>
+
+                      {/* Step indicator */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
+                        {['method', 'details', 'confirm'].map((s, i) => (
+                          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '12px', fontWeight: 800,
+                              background: ['method','details','confirm'].indexOf(payStep) >= i ? '#0ea5e9' : '#e2e8f0',
+                              color: ['method','details','confirm'].indexOf(payStep) >= i ? '#fff' : '#94a3b8'
+                            }}>{i + 1}</div>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: payStep === s ? '#0ea5e9' : '#94a3b8' }}>
+                              {s === 'method' ? 'Method' : s === 'details' ? 'Details' : 'Confirm'}
+                            </span>
+                            {i < 2 && <div style={{ width: '24px', height: '2px', background: '#e2e8f0' }} />}
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        className={styles.payBtn}
-                        onClick={handlePay}
-                        disabled={isPaying}
-                      >
-                        {isPaying ? 'Processing...' : `Pay RWF ${bill.balanceDue.toLocaleString()} Now`}
-                      </button>
+
+                      {/* Step 1 — Choose method */}
+                      {payStep === 'method' && (
+                        <>
+                          <h3 style={{ marginBottom: '8px' }}>How would you like to pay?</h3>
+                          <p style={{ color: '#64748b', marginBottom: '20px', fontSize: '14px' }}>
+                            Balance due: <strong style={{ color: '#0f172a' }}>RWF {bill.balanceDue.toLocaleString()}</strong>
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                            <button
+                              onClick={() => { setPayMethod('momo'); setPayStep('details') }}
+                              style={{
+                                padding: '20px', borderRadius: '16px', border: '2px solid #e2e8f0',
+                                background: '#fff', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.borderColor = '#0ea5e9'}
+                              onMouseLeave={e => e.currentTarget.style.borderColor = '#e2e8f0'}
+                            >
+                              <div style={{ fontSize: '28px', marginBottom: '8px' }}>📱</div>
+                              <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a' }}>Mobile Money</div>
+                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>MTN MoMo / Airtel Money</div>
+                            </button>
+                            <button
+                              onClick={() => { setPayMethod('bank'); setPayStep('details') }}
+                              style={{
+                                padding: '20px', borderRadius: '16px', border: '2px solid #e2e8f0',
+                                background: '#fff', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.borderColor = '#0ea5e9'}
+                              onMouseLeave={e => e.currentTarget.style.borderColor = '#e2e8f0'}
+                            >
+                              <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏦</div>
+                              <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a' }}>Bank Transfer</div>
+                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Direct bank / card payment</div>
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Step 2 — Enter details */}
+                      {payStep === 'details' && (
+                        <>
+                          <h3 style={{ marginBottom: '4px' }}>
+                            {payMethod === 'momo' ? '📱 Mobile Money Payment' : '🏦 Bank Transfer Payment'}
+                          </h3>
+                          <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+                            Amount: <strong style={{ color: '#0f172a' }}>RWF {bill.balanceDue.toLocaleString()}</strong>
+                          </p>
+
+                          {payMethod === 'momo' ? (
+                            <>
+                              {/* MoMo instructions */}
+                              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+                                <div style={{ fontWeight: 700, fontSize: '13px', color: '#c2410c', marginBottom: '8px' }}>📋 How to pay via MoMo:</div>
+                                <ol style={{ fontSize: '13px', color: '#7c3aed', paddingLeft: '18px', lineHeight: '1.8', margin: 0 }}>
+                                  <li>Dial <strong>*182*8*1#</strong> on your phone</li>
+                                  <li>Enter merchant code: <strong>123456</strong></li>
+                                  <li>Enter amount: <strong>RWF {bill.balanceDue.toLocaleString()}</strong></li>
+                                  <li>Enter your PIN to confirm</li>
+                                  <li>Copy the transaction ID below</li>
+                                </ol>
+                              </div>
+                              <div style={{ marginBottom: '16px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
+                                  Your MoMo Phone Number *
+                                </label>
+                                <input
+                                  type="tel"
+                                  placeholder="e.g. 0788123456"
+                                  value={payPhone}
+                                  onChange={e => setPayPhone(e.target.value)}
+                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px' }}
+                                />
+                              </div>
+                              <div style={{ marginBottom: '20px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
+                                  Transaction ID (from MoMo SMS) *
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. TXN123456789"
+                                  value={payReference}
+                                  onChange={e => setPayReference(e.target.value)}
+                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontFamily: 'monospace' }}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {/* Bank instructions */}
+                              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+                                <div style={{ fontWeight: 700, fontSize: '13px', color: '#1e40af', marginBottom: '8px' }}>🏦 Bank Transfer Details:</div>
+                                <div style={{ fontSize: '13px', color: '#1e3a8a', lineHeight: '1.8' }}>
+                                  <div>Bank: <strong>Bank of Kigali</strong></div>
+                                  <div>Account Name: <strong>Rwanda Digital Medical Center</strong></div>
+                                  <div>Account Number: <strong>00040-0123456-78</strong></div>
+                                  <div>Reference: <strong>{bill.billNumber}</strong></div>
+                                </div>
+                              </div>
+                              <div style={{ marginBottom: '16px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
+                                  Your Bank Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Bank of Kigali"
+                                  value={payBankName}
+                                  onChange={e => setPayBankName(e.target.value)}
+                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px' }}
+                                />
+                              </div>
+                              <div style={{ marginBottom: '16px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
+                                  Account Holder Name *
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Name on your bank account"
+                                  value={payAccountName}
+                                  onChange={e => setPayAccountName(e.target.value)}
+                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px' }}
+                                />
+                              </div>
+                              <div style={{ marginBottom: '20px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
+                                  Bank Transaction Reference *
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. REF-20240423-001"
+                                  value={payReference}
+                                  onChange={e => setPayReference(e.target.value)}
+                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontFamily: 'monospace' }}
+                                />
+                              </div>
+                            </>
+                          )}
+
+                          {error && <div className={styles.error} style={{ marginBottom: '12px' }}>{error}</div>}
+
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => { setPayStep('method'); setError('') }}
+                              style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+                              ← Back
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (payMethod === 'momo' && (!payPhone.trim() || !payReference.trim())) {
+                                  setError('Please enter your phone number and transaction ID.')
+                                  return
+                                }
+                                if (payMethod === 'bank' && (!payBankName.trim() || !payAccountName.trim() || !payReference.trim())) {
+                                  setError('Please fill in all bank details.')
+                                  return
+                                }
+                                setError('')
+                                setPayStep('confirm')
+                              }}
+                              style={{ flex: 2, padding: '12px', borderRadius: '10px', border: 'none', background: '#0ea5e9', color: '#fff', fontWeight: 800, cursor: 'pointer', fontSize: '14px' }}>
+                              Review & Confirm →
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Step 3 — Confirm */}
+                      {payStep === 'confirm' && (
+                        <>
+                          <h3 style={{ marginBottom: '16px' }}>Confirm Your Payment</h3>
+                          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+                            <div style={{ display: 'grid', gap: '12px' }}>
+                              {[
+                                ['Method', payMethod === 'momo' ? '📱 Mobile Money' : '🏦 Bank Transfer'],
+                                ['Amount', `RWF ${bill.balanceDue.toLocaleString()}`],
+                                payMethod === 'momo'
+                                  ? ['Phone', payPhone]
+                                  : ['Bank', payBankName],
+                                payMethod === 'momo'
+                                  ? ['Transaction ID', payReference]
+                                  : ['Account Name', payAccountName],
+                                payMethod === 'bank' ? ['Reference', payReference] : null,
+                                ['Bill Number', bill.billNumber],
+                              ].filter(Boolean).map(([label, val]) => (
+                                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                                  <span style={{ color: '#64748b', fontWeight: 600 }}>{label}</span>
+                                  <span style={{ fontWeight: 700, color: '#0f172a', fontFamily: label.includes('ID') || label.includes('Reference') || label.includes('Bill') ? 'monospace' : 'inherit' }}>{val}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {error && <div className={styles.error} style={{ marginBottom: '12px' }}>{error}</div>}
+
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => { setPayStep('details'); setError('') }}
+                              style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+                              ← Edit
+                            </button>
+                            <button
+                              className={styles.payBtn}
+                              onClick={handlePay}
+                              disabled={isPaying}
+                              style={{ flex: 2, padding: '12px' }}
+                            >
+                              {isPaying ? 'Processing...' : `✓ Confirm Payment — RWF ${bill.balanceDue.toLocaleString()}`}
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Step 4 — Success */}
+                      {payStep === 'success' && (
+                        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                          <div style={{ fontSize: '56px', marginBottom: '12px' }}>✅</div>
+                          <h3 style={{ color: '#059669', marginBottom: '8px' }}>Payment Submitted!</h3>
+                          <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+                            Your payment has been recorded. The billing team will confirm it shortly.
+                          </p>
+                          <button className={styles.printReceiptBtn} onClick={handlePrintReceipt}>
+                            Download Receipt PDF
+                          </button>
+                        </div>
+                      )}
+
                     </div>
                   ) : (
                     <div className={styles.paidSuccess}>
@@ -547,70 +830,6 @@ export default function PatientPortal() {
                   )}
                 </div>
 
-                {/* Printable Receipt Footer (Hidden in UI) */}
-                <div className="print-only" style={{ display: 'none', marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-                    <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
-                    <div style={{ textAlign: 'left' }}>
-                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>RWANDA DIGITAL MEDICAL CENTER</h2>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>Official Payment Receipt</p>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
-                    <div>
-                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b' }}>Receipt To:</label>
-                      <div style={{ fontWeight: 700 }}>{bill.patientName}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b' }}>Receipt Date:</label>
-                      <div style={{ fontWeight: 700 }}>{new Date().toLocaleDateString()}</div>
-                    </div>
-                  </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '32px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
-                        <th style={{ padding: '12px 0' }}>Description</th>
-                        <th style={{ padding: '12px 0', textAlign: 'right' }}>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bill.items.filter(i => i.isCompleted && !i.isDisputed).map(item => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 0' }}>
-                            <div style={{ fontWeight: 600 }}>{item.description}</div>
-                            <div style={{ fontSize: '10px', color: '#64748b' }}>Qty: {item.quantity} × RWF {item.unitPrice.toLocaleString()}</div>
-                          </td>
-                          <td style={{ padding: '8px 0', textAlign: 'right' }}>RWF {item.subtotal.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                      <tr style={{ borderTop: '2px solid #e2e8f0', fontWeight: 700 }}>
-                        <td style={{ padding: '12px 0' }}>Total Charges</td>
-                        <td style={{ padding: '12px 0', textAlign: 'right' }}>RWF {bill.totalAmount.toLocaleString()}</td>
-                      </tr>
-                      <tr style={{ color: '#059669' }}>
-                        <td style={{ padding: '4px 0' }}>Insurance Coverage ({bill.items[0]?.coveragePercentage || 0}%)</td>
-                        <td style={{ padding: '4px 0', textAlign: 'right' }}>- RWF {bill.totalInsurance.toLocaleString()}</td>
-                      </tr>
-                      <tr style={{ borderBottom: '2px solid #0f172a', fontWeight: 700 }}>
-                        <td style={{ padding: '4px 0 12px' }}>Net Patient Liability</td>
-                        <td style={{ padding: '4px 0 12px', textAlign: 'right' }}>RWF {bill.patientLiability.toLocaleString()}</td>
-                      </tr>
-                      {bill.payments.map(p => (
-                        <tr key={p.id} style={{ fontSize: '12px', color: '#475569' }}>
-                          <td style={{ padding: '8px 0' }}>Payment: {p.method.toUpperCase()} (Ref: {p.reference})</td>
-                          <td style={{ padding: '8px 0', textAlign: 'right', color: '#059669' }}>- RWF {p.amount.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                      <tr style={{ fontWeight: 800, fontSize: '18px', borderTop: '1px solid #0f172a' }}>
-                        <td style={{ padding: '12px 0' }}>Balance Remaining</td>
-                        <td style={{ padding: '12px 0', textAlign: 'right' }}>RWF {bill.balanceDue.toLocaleString()}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <div style={{ textAlign: 'center', fontSize: '12px', color: '#94a3b8', marginTop: '40px' }}>
-                    This is a computer-generated receipt. No signature is required.
-                  </div>
-                </div>
               </div>
 
 
@@ -788,6 +1007,17 @@ export default function PatientPortal() {
                   <button onClick={fetchSecureHistory} className={styles.btn} style={{ padding: '10px 24px', fontSize: '14px' }}>Check Again</button>
                 </div>
               )}
+            </div>
+          )}
+
+          {['profile', 'reports', 'complaints'].includes(activeTab) && !user && (
+            <div className={styles.authCard} style={{ maxWidth: '400px', margin: '0 auto' }}>
+              <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔒</div>
+              <h2>Login Required</h2>
+              <p style={{ color: '#64748b', marginBottom: '20px' }}>You need to be logged in to access this section.</p>
+              <button className={styles.btn} onClick={() => setActiveTab('history')}>
+                Login / Register
+              </button>
             </div>
           )}
 
@@ -1066,6 +1296,31 @@ export default function PatientPortal() {
           )}
         </div>
       </main>
+      {/* Dispute Modal — rendered at root level to avoid stacking context issues */}
+      {activeDisputeItem && (
+        <div className={styles.disputeOverlay}>
+          <div className={styles.disputeForm}>
+            <h3>Report Issue: {activeDisputeItem.description}</h3>
+            <p>Describe the issue with this charge (e.g., incorrect price, service not received).</p>
+            <form onSubmit={handleRaiseDispute}>
+              {disputeError && <div className={styles.error} style={{ marginBottom: '12px' }}>{disputeError}</div>}
+              <textarea
+                className={styles.textarea}
+                placeholder="Enter details here..."
+                value={disputeReason}
+                onChange={e => setDisputeReason(e.target.value)}
+                required
+              />
+              <div className={styles.modalActions}>
+                <button type="button" onClick={() => { setActiveDisputeItem(null); setDisputeError('') }} className={styles.backBtn} disabled={disputeLoading}>Cancel</button>
+                <button type="submit" className={styles.payBtn} style={{ padding: '8px 24px' }} disabled={disputeLoading}>
+                  {disputeLoading ? 'Submitting...' : 'Submit Complaint'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

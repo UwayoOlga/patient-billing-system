@@ -163,10 +163,13 @@ export default function ReceptionistDashboard() {
     navigate('/login');
   };
 
-  const filteredPatients = patients.filter(p => 
-    p.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.phoneNumber.includes(searchTerm)
-  );
+  const filteredPatients = patients
+    .slice()
+    .sort((a, b) => b.id - a.id)  // newest first (highest ID = most recently registered)
+    .filter(p => 
+      p.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      p.phoneNumber.includes(searchTerm)
+    );
 
   return (
     <div className={styles.page}>
@@ -239,7 +242,10 @@ export default function ReceptionistDashboard() {
                       <div className={styles.openVisitBadge}>
                         <div className={styles.pulse} />
                         <div style={{flex: 1}}>
-                          Visit Open: {activeVisitsByPatient[patient.id].billNumber}
+                          Visit Open: <strong>{activeVisitsByPatient[patient.id].billNumber}</strong>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                            Give this number to patient to view their bill
+                          </div>
                           {activeVisitsByPatient[patient.id].assignedDoctor ? (
                             <div className={styles.assignedDoctor}>
                               Dr. {activeVisitsByPatient[patient.id].assignedDoctor}
