@@ -4,12 +4,12 @@ A professional healthcare billing and patient management system with comprehensi
 
 ## Development Team
 
-| Student ID | Name | Role |
-|------------|------|------|
-| 26262 | Keza Ketsia | Backend Development |
-| 26971 | Mukamisha Kevine | Frontend Development |
-| 26138 | Shema Ryan | Database Design |
-| 26139 | Uwayo Olga | System Integration |
+| Student ID | Name  
+|------------|------ 
+| 26262 | Keza Ketsia  
+| 26971 | Mukamisha Kevine 
+| 26138 | Shema Ryan 
+| 26139 | Uwayo Olga 
 
 ## System Overview
 
