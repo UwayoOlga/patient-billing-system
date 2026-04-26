@@ -1,6 +1,15 @@
 # Hospital Billing Management System
-
+## Live Demo: https://hospital.ntwrkd.co.uk/
 A professional healthcare billing and patient management system with comprehensive workflow automation, role-based access control, and integrated payment processing.
+
+## Development Team
+
+| Student ID | Name | Role |
+|------------|------|------|
+| 26262 | Keza Ketsia | Backend Development |
+| 26971 | Mukamisha Kevine | Frontend Development |
+| 26138 | Shema Ryan | Database Design |
+| 26139 | Uwayo Olga | System Integration |
 
 ## System Overview
 
@@ -157,14 +166,6 @@ npm run dev
 - **Patient Reports**: Visit history, insurance vs. patient costs
 - **Admin Reports**: System-wide financial and operational analytics
 
-## Development Team
-
-| Student ID | Name | Role |
-|------------|------|------|
-| 26262 | Keza Ketsia | Backend Development |
-| 26971 | Mukamisha Kevine | Frontend Development |
-| 26138 | Shema Ryan | Database Design |
-| 26139 | Uwayo Olga | System Integration |
 
 ## License
 
