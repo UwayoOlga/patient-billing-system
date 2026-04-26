@@ -21,6 +21,25 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
   const sigPadRef = useRef(null)
   const [signatureUrl, setSignatureUrl] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [completing, setCompleting] = useState(false)
+
+  async function handleDone() {
+    if (billData.status !== 'Open') {
+      onUpdated?.()
+      onClose()
+      return
+    }
+    setCompleting(true)
+    try {
+      await api.patch(`/bills/${bill.id}/doctor-complete`)
+      onUpdated?.()
+      onClose()
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to complete visit')
+    } finally {
+      setCompleting(false)
+    }
+  }
 
   async function reloadBill() {
     try {
@@ -236,9 +255,18 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download Summary PDF
             </button>
-            {billData.status === 'Open' && (
-              <button className={styles.finishBtn} onClick={handleFinishConsultation}>
-                Finish Consultation
+            {billData.status === 'Open' ? (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className={styles.finishBtn} onClick={handleFinishConsultation}>
+                  Finish Consultation
+                </button>
+                <button className={styles.finishBtn} onClick={handleDone} disabled={completing} style={{ background: '#059669' }}>
+                  {completing ? 'Completing...' : 'Done / Close'}
+                </button>
+              </div>
+            ) : (
+              <button className={styles.finishBtn} onClick={onClose} style={{ background: '#64748b' }}>
+                Close
               </button>
             )}
             <button className={styles.closeBtn} onClick={onClose}>✕</button>

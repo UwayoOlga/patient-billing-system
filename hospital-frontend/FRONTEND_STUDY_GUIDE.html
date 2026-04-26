@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hospital Billing - Frontend Study Guide</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px; color: #0f172a; line-height: 1.6; }
+  h1 { background: #0f172a; color: #fff; padding: 24px; border-radius: 12px; text-align: center; }
+  h2 { background: #1d4ed8; color: #fff; padding: 12px 20px; border-radius: 8px; margin-top: 40px; }
+  h3 { color: #1d4ed8; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+  .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .code { background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre; overflow-x: auto; margin: 8px 0; }
+  .green { background: #dcfce7; border-left: 4px solid #059669; padding: 12px 16px; border-radius: 4px; margin: 8px 0; }
+  .blue { background: #dbeafe; border-left: 4px solid #1d4ed8; padding: 12px 16px; border-radius: 4px; margin: 8px 0; }
+  .yellow { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin: 8px 0; }
+  .red { background: #fee2e2; border-left: 4px solid #ef4444; padding: 12px 16px; border-radius: 4px; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th { background: #0f172a; color: #fff; padding: 10px 14px; text-align: left; }
+  td { padding: 10px 14px; border-bottom: 1px solid #e2e8f0; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .tag { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; margin: 2px; }
+  .file { display: inline-block; background: #fef3c7; color: #92400e; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-family: monospace; }
+  @media print { body { padding: 20px; } h2 { break-before: page; } }
+</style>
+</head>
+<body>
+
+<h1>🏥 Hospital Billing System — Frontend Study Guide</h1>
+<p style="text-align:center; color:#64748b;">React + JSX + CSS Modules | Built with Vite</p>
+
+<h2>1. PROJECT STRUCTURE</h2>
+<div class="box">
+<div class="code">hospital-frontend/
+  src/
+    App.jsx              ← ALL routes defined here
+    main.jsx             ← starts the React app
+    index.css            ← global styles + CSS variables
+    utils/
+      api.js             ← ALL backend calls go through here
+      auth.js            ← login/logout/token storage
+    pages/
+      Login.jsx          ← staff login page
+      LandingPage.jsx    ← public homepage
+      PatientPortal.jsx  ← patient self-service
+      BillingDashboard.jsx  ← cashier dashboard
+      NurseDashboard.jsx    ← nurse dashboard
+      LabDashboard.jsx      ← lab tech dashboard
+      AdminDashboard.jsx    ← admin dashboard
+      ReceptionistDashboard.jsx
+      PharmacyDashboard.jsx
+      doctor/
+        DoctorDashboard.jsx     ← doctor main page
+        AddChargeModal.jsx      ← doctor adds charges
+        VisitDetailsModal.jsx   ← visit details + PDF
+        AddPrescriptionModal.jsx
+    components/
+      ProfileTab.jsx            ← reused in ALL dashboards
+      PaymentProcessingModal.jsx ← cashier payment modal</div>
+</div>
+
+<h2>2. LANGUAGES & TOOLS USED</h2>
+<table>
+  <tr><th>Technology</th><th>What it does</th><th>File type</th></tr>
+  <tr><td>React 19</td><td>UI framework, component-based</td><td>.jsx</td></tr>
+  <tr><td>JSX</td><td>JavaScript with HTML-like syntax</td><td>.jsx</td></tr>
+  <tr><td>CSS Modules</td><td>Scoped styling per component</td><td>.module.css</td></tr>
+  <tr><td>JavaScript ES6+</td><td>Logic, API calls, state</td><td>.js / .jsx</td></tr>
+  <tr><td>Axios</td><td>HTTP requests to backend</td><td>api.js</td></tr>
+  <tr><td>React Router</td><td>Page navigation/routing</td><td>App.jsx</td></tr>
+  <tr><td>Vite</td><td>Build tool, runs dev server</td><td>vite.config.js</td></tr>
+  <tr><td>jsPDF</td><td>Generate PDF downloads</td><td>various .jsx</td></tr>
+</table>
+
+<h2>3. HOW ROUTING WORKS (App.jsx)</h2>
+<div class="blue">Every page URL and which role can access it is defined in <span class="file">App.jsx</span></div>
+<div class="code">// App.jsx — ALL routes are here
+&lt;Routes&gt;
+  &lt;Route path="/" element={&lt;LandingPage /&gt;} /&gt;              // public
+  &lt;Route path="/login" element={&lt;Login /&gt;} /&gt;               // public
+  &lt;Route path="/patient/view" element={&lt;PatientPortal /&gt;} /&gt; // public
+
+  &lt;Route path="/doctor" element={
+    &lt;ProtectedRoute role="Doctor"&gt;          // only Doctor role
+      &lt;DoctorDashboard /&gt;
+    &lt;/ProtectedRoute&gt;
+  } /&gt;
+
+  &lt;Route path="/billing" element={
+    &lt;ProtectedRoute role={["Cashier", "Admin"]}&gt;  // Cashier OR Admin
+      &lt;BillingDashboard /&gt;
+    &lt;/ProtectedRoute&gt;
+  } /&gt;
+
+  &lt;Route path="/lab"      element={&lt;ProtectedRoute role="LabTech"&gt;...&lt;/ProtectedRoute&gt;} /&gt;
+  &lt;Route path="/nurse"    element={&lt;ProtectedRoute role="Nurse"&gt;...&lt;/ProtectedRoute&gt;} /&gt;
+  &lt;Route path="/pharmacy" element={&lt;ProtectedRoute role="Pharmacist"&gt;...&lt;/ProtectedRoute&gt;} /&gt;
+  &lt;Route path="/admin"    element={&lt;ProtectedRoute role="Admin"&gt;...&lt;/ProtectedRoute&gt;} /&gt;
+  &lt;Route path="/reception" element={&lt;ProtectedRoute role="Receptionist"&gt;...&lt;/ProtectedRoute&gt;} /&gt;
+&lt;/Routes&gt;</div>
+
+<div class="yellow">To change which role accesses a page → find the ProtectedRoute for that page in App.jsx and change the role prop</div>
+
+<h2>4. HOW API CALLS WORK (api.js)</h2>
+<div class="blue">Every single backend call in the ENTIRE app goes through <span class="file">src/utils/api.js</span></div>
+<div class="code">// api.js — the messenger between frontend and backend
+import axios from 'axios'
+import { getToken } from './auth'
+
+const api = axios.create({
+  baseURL: 'http://localhost:5253/api',  // ← CHANGE SERVER URL HERE
+})
+
+// Automatically adds JWT token to EVERY request
+api.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// If backend says 401 (not logged in) → auto logout
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('hb_user')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)</div>
+
+<div class="green">How to use api.js in any component:
+<div class="code">import api from '../utils/api'
+
+const { data } = await api.get('/bills')           // GET
+const { data } = await api.post('/bills', { })     // POST (send data)
+await api.patch('/bills/1/finalize')               // PATCH (update)
+await api.delete('/bills/1')                       // DELETE</div></div>
+
+<h2>5. HOW AUTH WORKS (auth.js)</h2>
+<div class="code">// auth.js — stores user info after login
+export function setUser(data) {
+  localStorage.setItem('hb_user', JSON.stringify(data))
+  // stores: { token: "...", role: "Admin", name: "John" }
+}
+
+export function getUser() {
+  return JSON.parse(localStorage.getItem('hb_user'))
+}
+
+export function getToken() {
+  return getUser()?.token  // just the JWT token
+}
+
+export function logout() {
+  localStorage.removeItem('hb_user')  // clears everything
+}</div>
+
+<h2>6. HOW LOGIN WORKS (Login.jsx)</h2>
+<div class="code">// Login.jsx — key parts
+async function handleSubmit(e) {
+  const { data } = await api.post('/auth/login', { email, password })
+  setUser({ token: data.token, role: data.role, name: data.name })
+
+  // Redirects based on role ← CHANGE ROUTES HERE
+  const roleRoutes = {
+    Doctor: '/doctor',
+    LabTech: '/lab',
+    Pharmacist: '/pharmacy',
+    Nurse: '/nurse',
+    Cashier: '/billing',
+    Admin: '/admin',
+    Receptionist: '/reception',
+  }
+  navigate(roleRoutes[data.role])
+}</div>
+
+<h2>7. THE PATTERN EVERY PAGE FOLLOWS</h2>
+<div class="green">Every single dashboard in this project follows this EXACT same structure:</div>
+<div class="code">export default function SomeDashboard() {
+
+  // 1. STATE — data the page holds in memory
+  const [bills, setBills] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState('dashboard')
+
+  // 2. FETCH ON LOAD — runs when page first opens
+  useEffect(() => { fetchBills() }, [])
+
+  // 3. API CALL — gets data from backend
+  async function fetchBills() {
+    setLoading(true)
+    const { data } = await api.get('/bills')
+    setBills(data)
+    setLoading(false)
+  }
+
+  // 4. ACTIONS — what happens when user clicks
+  async function handleDelete(id) {
+    await api.delete(`/bills/${id}`)
+    fetchBills()  // refresh after delete
+  }
+
+  // 5. TABS — sidebar navigation
+  const navItems = [
+    { key: 'dashboard', label: 'Dashboard' },
+    { key: 'profile', label: 'My Profile' },
+  ]
+
+  // 6. UI — what the user sees
+  return (
+    &lt;div&gt;
+      &lt;aside&gt; {/* sidebar */} &lt;/aside&gt;
+      &lt;main&gt;
+        {activeTab === 'dashboard' &amp;&amp; &lt;div&gt;dashboard content&lt;/div&gt;}
+        {activeTab === 'profile' &amp;&amp; &lt;ProfileTab /&gt;}
+      &lt;/main&gt;
+    &lt;/div&gt;
+  )
+}</div>
+
+<h2>8. DOCTOR DASHBOARD</h2>
+<div class="box">
+  <strong>File:</strong> <span class="file">pages/doctor/DoctorDashboard.jsx</span><br>
+  <strong>CSS:</strong> <span class="file">pages/doctor/DoctorDashboard.module.css</span><br>
+  <strong>Tabs:</strong> <span class="tag">Dashboard</span> <span class="tag">Patients</span> <span class="tag">Visits</span> <span class="tag">Trash</span> <span class="tag">Profile</span>
+</div>
+<div class="code">// KEY API CALLS in DoctorDashboard.jsx
+api.get('/bills/summary')              // loads all visits for this doctor
+api.get('/patient/mine')               // loads doctor's patients
+api.delete('/bills/${billId}')         // moves visit to trash
+api.patch('/bills/${billId}/restore')  // restores from trash
+api.delete('/bills/${billId}/permanent') // permanent delete
+
+// HOW ACTIVE VISITS ARE FILTERED
+const activeVisits = bills.filter(b => b.status === 'Open')
+const completedVisits = bills.filter(b => b.status !== 'Open')
+const completedToday = completedVisits.filter(b =>
+  new Date(b.createdAt).toDateString() === new Date().toDateString()
+)
+
+// MODALS USED
+// AddChargeModal    → opens when "+ Add Charges" clicked
+// VisitDetailsModal → opens when "View Details / PDF" clicked</div>
+
+<div class="yellow">AddChargeModal is in: <span class="file">pages/doctor/AddChargeModal.jsx</span> — sends api.post('/bills/items')</div>
+<div class="yellow">VisitDetailsModal is in: <span class="file">pages/doctor/VisitDetailsModal.jsx</span> — has exportToPDF() function</div>
+
+<h2>9. NURSE DASHBOARD</h2>
+<div class="box">
+  <strong>File:</strong> <span class="file">pages/NurseDashboard.jsx</span><br>
+  <strong>CSS:</strong> <span class="file">pages/NurseDashboard.module.css</span><br>
+  <strong>Tabs:</strong> <span class="tag">Work Queue</span> <span class="tag">Completed Today</span> <span class="tag">Performance Reports</span> <span class="tag">Profile</span>
+</div>
+<div class="code">// Nurse only sees these 3 categories
+const NURSING_CATEGORIES = new Set(['NursingService', 'BedCharge', 'Consumable'])
+
+// Only shows orders added by Doctor or Admin
+function getNursingOrders(bill) {
+  return bill.items.filter(i =>
+    NURSING_CATEGORIES.has(i.category) &&
+    (i.addedByRole === 'Doctor' || i.addedByRole === 'Admin')
+  )
+}
+
+// KEY API CALLS
+api.get('/bills/summary')   // get all bills with nursing items
+api.patch('/bills/items/${itemId}/nursing-complete', {
+  quantity: 1,
+  notes: 'done'
+})  // mark nursing order complete
+
+// REPORT PDF columns: Date, Patient Name, Bill #, Service, Notes
+// exportToPDF() function → search for it in NurseDashboard.jsx</div>
+
+<h2>10. CASHIER/BILLING DASHBOARD</h2>
+<div class="box">
+  <strong>File:</strong> <span class="file">pages/BillingDashboard.jsx</span><br>
+  <strong>CSS:</strong> <span class="file">pages/BillingDashboard.module.css</span><br>
+  <strong>Tabs:</strong> <span class="tag">Dashboard</span> <span class="tag">Daily Reports</span> <span class="tag">Complaints</span> <span class="tag">Profile</span>
+</div>
+<div class="code">// KEY API CALLS
+api.get('/bills')              // all bills
+api.get('/disputes/open')      // open patient complaints
+api.patch('/disputes/resolve', { disputeId, isResolved, resolutionNotes })
+
+// STATS CALCULATED FROM BILLS
+const totalOutstanding = bills.reduce((acc, b) =>
+  acc + (b.status !== 'Paid' ? b.balanceDue : 0), 0)
+const openCount = bills.filter(b => b.status === 'Open').length
+const finalizedCount = bills.filter(b => b.status === 'Finalized').length
+
+// COLLECTION RATE FORMULA
+const collectionRate = (totalCollected / (totalBilled - totalInsurance)) * 100
+
+// PAYMENT FLOW
+// Cashier clicks "Process Payment" → PaymentProcessingModal opens
+// PaymentProcessingModal is in: components/PaymentProcessingModal.jsx
+
+// COMPLAINT RESOLUTION
+handleResolveDispute(id, true, 'notes')   // Resolve & Remove
+handleResolveDispute(id, false, 'notes')  // Reject
+
+// REPORT RANGES: today / week / month / custom dates
+// exportReportPDF() → PDF has 3 sections:
+//   1. KPI summary (billed, collected, outstanding)
+//   2. Revenue by service category
+//   3. Recent payments table</div>
+
+<h2>11. WHERE TO CHANGE COLORS, SIZES & POSITIONS</h2>
+<div class="red">RULE: Every .jsx file has a matching .module.css file. ALL visual changes go in the CSS file.</div>
+
+<table>
+  <tr><th>Page</th><th>CSS File to Edit</th></tr>
+  <tr><td>Login page</td><td><span class="file">pages/Login.module.css</span></td></tr>
+  <tr><td>Doctor dashboard</td><td><span class="file">pages/doctor/DoctorDashboard.module.css</span></td></tr>
+  <tr><td>Nurse dashboard</td><td><span class="file">pages/NurseDashboard.module.css</span></td></tr>
+  <tr><td>Cashier dashboard</td><td><span class="file">pages/BillingDashboard.module.css</span></td></tr>
+  <tr><td>Lab dashboard</td><td><span class="file">pages/LabDashboard.module.css</span></td></tr>
+  <tr><td>Admin dashboard</td><td><span class="file">pages/AdminDashboard.module.css</span></td></tr>
+  <tr><td>Patient portal</td><td><span class="file">pages/PatientPortal.module.css</span></td></tr>
+  <tr><td>Global colors/fonts</td><td><span class="file">index.css</span></td></tr>
+</table>
+
+<h3>How to find what to change (Step by Step)</h3>
+<div class="code">// STEP 1: In the .jsx file, find the element
+&lt;button className={styles.btn}&gt;Sign In&lt;/button&gt;
+//                       ^^^
+//                  this is the class name
+
+// STEP 2: Open the matching .module.css file
+// Press Ctrl+F and search for: .btn
+
+// STEP 3: Change it
+.btn {
+  background: #1d4ed8;   /* ← change color */
+  font-size: 16px;        /* ← change size */
+  padding: 12px 24px;     /* ← change spacing */
+  border-radius: 8px;     /* ← change shape */
+}</div>
+
+<h3>Common CSS Changes</h3>
+<div class="code">/* COLORS */
+background: #1d4ed8;     /* background color */
+color: #ffffff;          /* text color */
+border: 1px solid #e2e8f0; /* border color */
+
+/* SIZES */
+width: 200px;
+height: 50px;
+font-size: 16px;
+padding: 12px 24px;      /* top/bottom left/right */
+margin: 16px 0;          /* top/bottom left/right */
+border-radius: 8px;      /* rounded corners */
+border-radius: 50%;      /* perfect circle */
+
+/* POSITIONS (Flexbox) */
+display: flex;                    /* side by side */
+flex-direction: column;           /* stacked vertically */
+justify-content: center;          /* center horizontally */
+justify-content: space-between;   /* spread apart */
+justify-content: flex-end;        /* push to right */
+align-items: center;              /* center vertically */
+gap: 16px;                        /* space between items */</div>
+
+<h2>12. FLEXBOX POSITIONS VISUAL GUIDE</h2>
+<div class="code">/* justify-content (horizontal) */
+flex-start:    [A][B][C]__________
+center:        ____[A][B][C]______
+flex-end:      __________[A][B][C]
+space-between: [A]____[B]____[C]
+space-evenly:  __[A]__[B]__[C]__
+
+/* align-items (vertical) */
+flex-start:  [A][B][C]   ← top
+             |   |   |
+center:      |  [A][B][C]  ← middle
+             |   |   |
+flex-end:    |   |   |   ← bottom
+             [A][B][C]</div>
+
+<table>
+  <tr><th>What you want</th><th>CSS to use</th></tr>
+  <tr><td>Items side by side</td><td>display: flex</td></tr>
+  <tr><td>Items stacked vertically</td><td>flex-direction: column</td></tr>
+  <tr><td>Push to right</td><td>justify-content: flex-end</td></tr>
+  <tr><td>Push to left</td><td>justify-content: flex-start</td></tr>
+  <tr><td>Center horizontally</td><td>justify-content: center</td></tr>
+  <tr><td>Center vertically</td><td>align-items: center</td></tr>
+  <tr><td>Space between items</td><td>justify-content: space-between</td></tr>
+  <tr><td>Gap between items</td><td>gap: 16px</td></tr>
+  <tr><td>Perfect center (both)</td><td>justify-content: center + align-items: center</td></tr>
+</table>
+
+<h2>13. THE AVATAR CIRCLE EXPLAINED</h2>
+<div class="code">/* The round circle showing user's first letter */
+.avatar {
+  width: 40px;              /* circle width */
+  height: 40px;             /* circle height */
+  border-radius: 50%;       /* makes it a CIRCLE */
+  background: var(--primary); /* uses CSS variable for color */
+  color: #fff;              /* white letter */
+  display: flex;            /* needed to center letter */
+  align-items: center;      /* center letter vertically */
+  justify-content: center;  /* center letter horizontally */
+  font-weight: 800;         /* bold */
+  font-size: 15px;          /* letter size */
+}
+
+/* var(--primary) is defined in index.css */
+:root {
+  --primary: #1d4ed8;  /* change this to change ALL primary colors */
+}</div>
+
+<h2>14. ALL API ENDPOINTS USED IN FRONTEND</h2>
+<table>
+  <tr><th>Page</th><th>API Call</th><th>What it does</th></tr>
+  <tr><td>Login</td><td>POST /auth/login</td><td>Staff login</td></tr>
+  <tr><td>Doctor</td><td>GET /bills/summary</td><td>Get doctor's visits</td></tr>
+  <tr><td>Doctor</td><td>DELETE /bills/{id}</td><td>Move to trash</td></tr>
+  <tr><td>Doctor</td><td>POST /bills/items</td><td>Add charge to bill</td></tr>
+  <tr><td>Nurse</td><td>GET /bills/summary</td><td>Get nursing orders</td></tr>
+  <tr><td>Nurse</td><td>PATCH /bills/items/{id}/nursing-complete</td><td>Complete order</td></tr>
+  <tr><td>Cashier</td><td>GET /bills</td><td>Get all bills</td></tr>
+  <tr><td>Cashier</td><td>GET /disputes/open</td><td>Get complaints</td></tr>
+  <tr><td>Cashier</td><td>PATCH /disputes/resolve</td><td>Resolve complaint</td></tr>
+  <tr><td>Lab</td><td>GET /bills/summary</td><td>Get lab tests</td></tr>
+  <tr><td>Lab</td><td>PATCH /bills/items/{id}/complete</td><td>Submit results</td></tr>
+  <tr><td>Patient</td><td>POST /auth/patient/login</td><td>Patient login</td></tr>
+  <tr><td>Patient</td><td>POST /bills/view</td><td>View bill by number</td></tr>
+  <tr><td>Patient</td><td>POST /payment/patient-pay</td><td>Make payment</td></tr>
+  <tr><td>Admin</td><td>GET /staff</td><td>Get all staff</td></tr>
+  <tr><td>Admin</td><td>POST /auth/register</td><td>Create staff account</td></tr>
+  <tr><td>Admin</td><td>GET /adminfinance/summary</td><td>Finance report</td></tr>
+</table>
+
+<h2>15. QUICK REFERENCE — WHERE IS EVERYTHING</h2>
+<table>
+  <tr><th>If they ask about...</th><th>Go to this file</th><th>Search for...</th></tr>
+  <tr><td>Change API server URL</td><td>utils/api.js</td><td>baseURL</td></tr>
+  <tr><td>Change login redirect</td><td>pages/Login.jsx</td><td>roleRoutes</td></tr>
+  <tr><td>Change who accesses a page</td><td>App.jsx</td><td>ProtectedRoute role=</td></tr>
+  <tr><td>Add a new route</td><td>App.jsx</td><td>Route path=</td></tr>
+  <tr><td>Change login button color</td><td>pages/Login.module.css</td><td>.btn</td></tr>
+  <tr><td>Change sidebar color</td><td>[Dashboard].module.css</td><td>.sidebar</td></tr>
+  <tr><td>Add tab to dashboard</td><td>[Dashboard].jsx</td><td>navItems array</td></tr>
+  <tr><td>Change PDF content</td><td>VisitDetailsModal.jsx</td><td>exportToPDF</td></tr>
+  <tr><td>Change cashier report</td><td>BillingDashboard.jsx</td><td>exportReportPDF</td></tr>
+  <tr><td>Change nurse report</td><td>NurseDashboard.jsx</td><td>exportToPDF</td></tr>
+  <tr><td>Change global colors</td><td>index.css</td><td>:root</td></tr>
+  <tr><td>Change how user is stored</td><td>utils/auth.js</td><td>setUser / getUser</td></tr>
+  <tr><td>Change payment modal</td><td>components/PaymentProcessingModal.jsx</td><td>whole file</td></tr>
+  <tr><td>Change profile tab</td><td>components/ProfileTab.jsx</td><td>whole file</td></tr>
+</table>
+
+<div style="margin-top:40px; background:#0f172a; color:#fff; padding:24px; border-radius:12px; text-align:center;">
+  <h3 style="color:#fff; margin:0 0 8px 0;">The Golden Rule</h3>
+  <p style="margin:0; font-size:16px;">JSX file = structure & logic &nbsp;|&nbsp; CSS Module file = colors, sizes, positions &nbsp;|&nbsp; api.js = all backend calls</p>
+</div>
+
+</body>
+</html>

@@ -237,10 +237,16 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(b => b.Id == billId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.ConsultationDone)
-                throw new InvalidOperationException("Only Open or ConsultationDone visits can be finalized.");
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.ConsultationDone && bill.Status != BillStatus.DoctorCompleted)
+                throw new InvalidOperationException("Only Open, ConsultationDone or DoctorCompleted visits can be finalized.");
 
-            var pendingCount = bill.Items.Count(i => !i.IsCompleted);
+            var pendingCount = bill.Items.Count(i => !i.IsCompleted && 
+                (i.Category == BillItemCategory.LabTest || 
+                 i.Category == BillItemCategory.PrescribedTest ||
+                 i.Category == BillItemCategory.Medication ||
+                 i.Category == BillItemCategory.NursingService ||
+                 i.Category == BillItemCategory.BedCharge ||
+                 i.Category == BillItemCategory.Consumable));
             var pendingRxCount = await _db.Prescriptions.CountAsync(p => p.BillId == billId && p.Status == 0);
 
             if (pendingCount > 0 || pendingRxCount > 0)
@@ -366,10 +372,9 @@ namespace HospitalBilling.Services
             }
             else if (staffRole == StaffRole.LabTech)
             {
-                // LabTechs see bills with lab items (only pending ones, or completed by them)
+                // LabTechs see bills with lab items (pending ones, or completed by them)
                 var labBillIds = await _db.BillItems
-                    .Where(i => (i.Category == BillItemCategory.LabTest || i.Category == BillItemCategory.PrescribedTest)
-                                && (!i.IsCompleted || i.CompletedByStaffId == staffId))
+                    .Where(i => i.Category == BillItemCategory.LabTest || i.Category == BillItemCategory.PrescribedTest)
                     .Select(i => i.BillId)
                     .Distinct()
                     .ToListAsync();
@@ -417,7 +422,7 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(b => b.Id == billId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open && staffRole != StaffRole.Cashier && staffRole != StaffRole.Admin)
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.DoctorCompleted && staffRole != StaffRole.Cashier && staffRole != StaffRole.Admin)
                 throw new InvalidOperationException("Doctors can only move Open visits to trash.");
 
             if (bill.CreatedByStaffId != staffId && staffRole != StaffRole.Cashier && staffRole != StaffRole.Admin)

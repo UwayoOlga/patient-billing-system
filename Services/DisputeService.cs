@@ -46,6 +46,7 @@ namespace HospitalBilling.Services
         {
             var dispute = await _db.Disputes
                 .Include(d => d.Bill)
+                .Include(d => d.BillItem)
                 .FirstOrDefaultAsync(d => d.Id == dto.DisputeId)
                 ?? throw new KeyNotFoundException("Dispute not found.");
 
@@ -53,6 +54,10 @@ namespace HospitalBilling.Services
             dispute.ResolvedAt = DateTime.UtcNow;
             dispute.ResolvedByStaffId = staffId;
             dispute.ResolutionNotes = dto.ResolutionNotes;
+
+            // Clear the disputed flag on the bill item
+            if (dispute.BillItem != null)
+                dispute.BillItem.IsDisputed = false;
 
             // Revert bill to Finalized so it can be paid
             if (dispute.Bill.Status == BillStatus.Disputed)

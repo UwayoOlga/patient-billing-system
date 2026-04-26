@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { 
-  createStandardReportHeader, 
-  createStandardReportFooter, 
+import {
+  createStandardReportHeader,
+  createStandardReportFooter,
   createStandardTable,
   generateReportFilename,
   createStatsSummary
@@ -35,6 +35,11 @@ export default function PatientPortal() {
     start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   })
+  const [payStep, setPayStep] = useState('method') // 'method' | 'details' | 'confirm' | 'success'
+  const [payPhone, setPayPhone] = useState('')
+  const [payAccountName, setPayAccountName] = useState('')
+  const [payBankName, setPayBankName] = useState('')
+  const [payReference, setPayReference] = useState('')
   const [isPaying, setIsPaying] = useState(false)
   const [payMethod, setPayMethod] = useState('momo')
   const [loading, setLoading] = useState(false)
@@ -44,7 +49,6 @@ export default function PatientPortal() {
   const [registrationSuccess, setRegistrationSuccess] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
   const [activeDisputeItem, setActiveDisputeItem] = useState(null)
-  const [paymentInfo, setPaymentInfo] = useState({ momoNumber: '', bankRef: '' })
 
   useEffect(() => {
     if (searchParams.get('bill')) {
@@ -62,6 +66,11 @@ export default function PatientPortal() {
       })
       setBill(data)
       setActiveTab('current')
+      setPayStep('method')
+      setPayPhone('')
+      setPayReference('')
+      setPayBankName('')
+      setPayAccountName('')
     } catch (err) {
       if (err.response?.status === 401 || err.response?.status === 403) {
         setError('Security Error: You can only view bills linked to your own account while logged in.')
@@ -82,20 +91,10 @@ export default function PatientPortal() {
       setHistory(data)
 
       // Automatically set the latest Unpaid/Open bill as the "Current" view for patients
-      // if they haven't manually selected one yet OR if they are on the 'current' tab with no bill
+      // only if they haven't manually selected one yet
       const activeBill = data.find(b => b.status === 'Open' || b.status === 'Finalized' || b.balanceDue > 0)
-      if (activeBill && (!bill || activeTab === 'current')) {
-        // Only update if it's a different bill or a status change
-        if (!bill || bill.id !== activeBill.id || bill.status !== activeBill.status || bill.balanceDue !== activeBill.balanceDue) {
-          setBill(activeBill)
-        }
-      }
-
-      if (user) {
-        try {
-          const { data: disputesData } = await api.get('/bills/disputes')
-          setDisputes(disputesData)
-        } catch (e) { }
+      if (activeBill && !bill) {
+        setBill(activeBill)
       }
     } catch (err) {
       if (!isAutoRefresh) {
@@ -151,8 +150,8 @@ export default function PatientPortal() {
     // Standardized header
     const dateRange = `${reportRange.start} to ${reportRange.end}`
     let y = createStandardReportHeader(
-      doc, 
-      'PATIENT MEDICAL & BILLING STATEMENT', 
+      doc,
+      'PATIENT MEDICAL & BILLING STATEMENT',
       `Personal Health Record - ${report.patientName}`,
       {
         generatedBy: 'Patient Portal',
@@ -296,146 +295,30 @@ export default function PatientPortal() {
   }
 
   async function handlePay() {
-    if (!bill) return;
-    setIsPaying(true);
-    setError('');
+    if (!bill) return
+    setIsPaying(true)
+    setError('')
     try {
-      const ref = payMethod === 'momo' 
-        ? `MOMO-${paymentInfo.momoNumber || 'SYSTEM'}-${Math.random().toString(36).substring(7).toUpperCase()}`
-        : `BANK-${paymentInfo.bankRef || 'SYSTEM'}-${Math.random().toString(36).substring(7).toUpperCase()}`;
-
       await api.post('/payment/patient-pay', {
         billId: bill.id,
         amount: bill.balanceDue,
         method: payMethod,
-        reference: ref
+        reference: payMethod === 'momo' ? 'MOMO-' + Math.random().toString(36).substring(7).toUpperCase() : 'BANK-' + Math.random().toString(36).substring(7).toUpperCase()
       });
-      setPaymentInfo({ momoNumber: '', bankRef: '' });
       // Refresh bill
       await fetchBill(bill.billNumber);
     } catch (err) {
-      console.error("Payment Error:", err);
-      setError(err.response?.data?.message || 'Payment failed. Please try again.');
+      console.error('Payment Error:', err)
+      setError(err.response?.data?.message || 'Payment failed. Please try again.')
     } finally {
-      setIsPaying(false);
+      setIsPaying(false)
     }
   }
 
 
   function handlePrintReceipt() {
-    if (!bill) return;
-    const doc = new jsPDF();
-
-    // Standardized header for receipt
-    let y = createStandardReportHeader(
-      doc, 
-      'OFFICIAL PAYMENT RECEIPT', 
-      `Medical Services Receipt - ${bill.patientName}`,
-      {
-        generatedBy: 'Patient Payment System',
-        additionalInfo: `Bill Number: ${bill.billNumber} | Patient ID: P${String(bill.patientId || 0).padStart(4, '0')}`
-      }
-    )
-
-    // Patient & Visit Information
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(11)
-    doc.setTextColor(15, 23, 42)
-    doc.text('PATIENT & VISIT DETAILS', 14, y)
-    y += 10
-
-    const patientInfo = [
-      { label: 'Visit Date', value: bill.createdAt ? new Date(bill.createdAt).toLocaleDateString() : '—' },
-      { label: 'Visit Status', value: bill.status || '—' },
-      { label: 'Insurance Coverage', value: bill.items?.[0]?.coveragePercentage ? `${bill.items[0].coveragePercentage}% Coverage` : 'Private Pay' },
-      { label: 'Balance Status', value: bill.balanceDue <= 0 ? 'PAID IN FULL' : `RWF ${bill.balanceDue.toLocaleString()} Outstanding` }
-    ]
-
-    patientInfo.forEach(info => {
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(9)
-      doc.setTextColor(100, 116, 139)
-      doc.text(info.label + ':', 14, y)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(15, 23, 42)
-      doc.text(info.value, 70, y)
-      y += 6
-    })
-    y += 8
-
-    // Services & Charges
-    const completedItems = (bill.items || []).filter(i => i.isCompleted && !i.isDisputed);
-
-    if (completedItems.length > 0) {
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(11)
-      doc.setTextColor(15, 23, 42)
-      doc.text('MEDICAL SERVICES PROVIDED', 14, y)
-      y += 10
-
-      const serviceData = completedItems.map(item => [
-        item.description || '',
-        item.category || '—',
-        String(item.quantity || 1),
-        `RWF ${(item.unitPrice || 0).toLocaleString()}`,
-        `RWF ${(item.subtotal || 0).toLocaleString()}`
-      ])
-
-      y = createStandardTable(
-        doc,
-        ['Service Description', 'Category', 'Qty', 'Unit Price', 'Total'],
-        serviceData,
-        y
-      )
-      y += 10
-    }
-
-    // Financial Summary
-    const financialStats = [
-      { label: 'Total Medical Charges', value: `RWF ${(bill.totalAmount || 0).toLocaleString()}` },
-      { label: 'Insurance Coverage', value: `– RWF ${(bill.totalInsurance || 0).toLocaleString()}` },
-      { label: 'Patient Responsibility', value: `RWF ${(bill.patientLiability || 0).toLocaleString()}` },
-      { label: 'Total Payments Received', value: `– RWF ${(bill.totalPaid || 0).toLocaleString()}` },
-      { label: 'Outstanding Balance', value: `RWF ${(bill.balanceDue || 0).toLocaleString()}`, highlight: bill.balanceDue <= 0 }
-    ]
-
-    y = createStatsSummary(doc, financialStats, y)
-
-    // Payment History
-    if (bill.payments && bill.payments.length > 0) {
-      y += 10
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(11)
-      doc.setTextColor(15, 23, 42)
-      doc.text('PAYMENT TRANSACTION HISTORY', 14, y)
-      y += 10
-
-      const paymentData = bill.payments.map(p => [
-        (p.method || '').toUpperCase(),
-        (p.reference || '—').substring(0, 25),
-        p.paidAt ? new Date(p.paidAt).toLocaleDateString() : '—',
-        `RWF ${(p.amount || 0).toLocaleString()}`
-      ])
-
-      createStandardTable(
-        doc,
-        ['Payment Method', 'Reference Number', 'Date', 'Amount'],
-        paymentData,
-        y,
-        { headerColor: [5, 150, 105] }
-      )
-    }
-
-    // Standardized footer with receipt-specific notice
-    createStandardReportFooter(doc, {
-      customFooterText: 'Keep this receipt for your records and insurance claims. This is an official payment receipt.'
-    })
-
-    // Save with standardized filename
-    const filename = generateReportFilename('Payment_Receipt', bill.patientName, bill.billNumber)
-    doc.save(filename);
+    window.print();
   }
-
 
   async function handleUpdateProfile(e) {
     e.preventDefault()
@@ -454,8 +337,9 @@ export default function PatientPortal() {
 
   async function handleRaiseDispute(e) {
     e.preventDefault()
-    if (!activeDisputeItem || !disputeReason) return
-    setLoading(true)
+    if (!activeDisputeItem || !disputeReason.trim()) return
+    setDisputeLoading(true)
+    setDisputeError('')
     try {
       await api.post(`/bills/item/${activeDisputeItem.id}/dispute`, JSON.stringify(disputeReason), {
         headers: { 'Content-Type': 'application/json' }
@@ -464,9 +348,9 @@ export default function PatientPortal() {
       setDisputeReason('')
       if (bill) await fetchBill(bill.billNumber)
     } catch (err) {
-      setError('Failed to submit dispute.')
+      setDisputeError(err.response?.data?.message || 'Failed to submit complaint. Please try again.')
     } finally {
-      setLoading(false)
+      setDisputeLoading(false)
     }
   }
 
@@ -489,7 +373,7 @@ export default function PatientPortal() {
     <div className={styles.patientPortal}>
       {/* Top Navbar */}
       <nav className={styles.topNav}>
-        <div className={styles.brand} onClick={() => { setActiveTab('history'); setError(''); }}>
+        <div className={styles.brand} onClick={() => { setActiveTab('current'); setError(''); }}>
           <img src={logo} alt="Logo" className={styles.logoImage} />
           <span className={styles.brandText}>HOSPITALBILLING</span>
         </div>
@@ -499,7 +383,15 @@ export default function PatientPortal() {
             <button
               key={item.key}
               className={`${styles.navItem} ${activeTab === item.key ? styles.active : ''}`}
-              onClick={() => { setActiveTab(item.key); setError(''); }}
+              onClick={() => {
+                const protectedTabs = ['reports', 'profile', 'complaints', 'history']
+                if (protectedTabs.includes(item.key) && !user) {
+                  setActiveTab('history') // shows login/register
+                } else {
+                  setActiveTab(item.key)
+                }
+                setError('')
+              }}
             >
               {item.icon}
               {item.label}
@@ -560,10 +452,9 @@ export default function PatientPortal() {
                 <input
                   type="text"
                   className={styles.input}
-                  placeholder="Enter Bill ID (e.g. BILL-2024...)"
+                  placeholder="Enter Bill ID (e.g. BILL-20260423-ABC123)"
                   value={billNumber}
                   onChange={e => setBillNumber(e.target.value.toUpperCase().trim())}
-                  pattern="^BILL-[0-9]{8}-[A-Z0-9]+$"
                   required
                 />
                 <button type="submit" className={styles.btn} disabled={loading}>
@@ -575,7 +466,7 @@ export default function PatientPortal() {
 
           {activeTab === 'current' && bill && (
             <div className={styles.billContainer}>
-              {user && bill.patientId === user.id && (
+              {user && bill.patientId === (user.patientId ?? user.id) && (
                 <div style={{ background: '#0ea5e9', color: '#fff', padding: '8px 24px', fontSize: '12px', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -634,7 +525,7 @@ export default function PatientPortal() {
                         <div className={styles.itemPrice} style={!item.isCompleted ? { color: '#94a3b8', textDecoration: 'line-through' } : {}}>
                           RWF {item.subtotal.toLocaleString()}
                         </div>
-                        {item.isCompleted && !item.isDisputed && (
+                        {item.isCompleted && !item.isDisputed && user?.role === 'Patient' && (
                           <button
                             className={styles.reportBtn}
                             onClick={() => setActiveDisputeItem(item)}
@@ -647,27 +538,7 @@ export default function PatientPortal() {
                   ))}
                 </div>
 
-                {activeDisputeItem && (
-                  <div className={styles.disputeOverlay}>
-                    <div className={styles.disputeForm}>
-                      <h3>Report Issue: {activeDisputeItem.description}</h3>
-                      <p>Describe the issue with this charge (e.g., incorrect price, service not received).</p>
-                      <form onSubmit={handleRaiseDispute}>
-                        <textarea
-                          className={styles.textarea}
-                          placeholder="Enter details here..."
-                          value={disputeReason}
-                          onChange={e => setDisputeReason(e.target.value)}
-                          required
-                        />
-                        <div className={styles.modalActions}>
-                          <button type="button" onClick={() => setActiveDisputeItem(null)} className={styles.backBtn}>Cancel</button>
-                          <button type="submit" className={styles.payBtn} style={{ padding: '8px 24px' }}>Submit Complaint</button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
+
 
                 <h3 className={styles.sectionTitle}>Financial Summary</h3>
                 <div className={styles.summary}>
@@ -703,8 +574,8 @@ export default function PatientPortal() {
                           <div className={styles.paymentInfo}>
                             <div className={styles.paymentMethod}>
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                                <line x1="1" y1="10" x2="23" y2="10"/>
+                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                                <line x1="1" y1="10" x2="23" y2="10" />
                               </svg>
                               {payment.method.toUpperCase()}
                             </div>
@@ -722,7 +593,7 @@ export default function PatientPortal() {
                             {payment.isConfirmed ? (
                               <span className={styles.confirmed}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polyline points="20 6 9 17 4 12"/>
+                                  <polyline points="20 6 9 17 4 12" />
                                 </svg>
                                 Confirmed
                               </span>
@@ -756,30 +627,6 @@ export default function PatientPortal() {
                           Bank Transfer
                         </button>
                       </div>
-
-                      {payMethod === 'momo' ? (
-                        <div className={styles.formGroup} style={{ marginTop: '16px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>MoMo Phone Number</label>
-                          <input 
-                            type="tel" 
-                            className={styles.input} 
-                            placeholder="078... or 079..." 
-                            value={paymentInfo.momoNumber}
-                            onChange={e => setPaymentInfo({...paymentInfo, momoNumber: e.target.value})}
-                          />
-                        </div>
-                      ) : (
-                        <div className={styles.formGroup} style={{ marginTop: '16px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Bank Transaction Reference</label>
-                          <input 
-                            type="text" 
-                            className={styles.input} 
-                            placeholder="Enter bank ref number" 
-                            value={paymentInfo.bankRef}
-                            onChange={e => setPaymentInfo({...paymentInfo, bankRef: e.target.value})}
-                          />
-                        </div>
-                      )}
                       <button
                         className={styles.payBtn}
                         onClick={handlePay}
@@ -787,24 +634,6 @@ export default function PatientPortal() {
                       >
                         {isPaying ? 'Processing...' : `Pay RWF ${bill.balanceDue.toLocaleString()} Now`}
                       </button>
-                      
-                      {/* Show receipt option for partial payments */}
-                      {bill.totalPaid > 0 && (
-                        <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                          <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                            Previous payments: RWF {bill.totalPaid.toLocaleString()}
-                          </p>
-                          <button className={styles.receiptBtn} onClick={handlePrintReceipt}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                              <polyline points="14,2 14,8 20,8"/>
-                              <line x1="16" y1="13" x2="8" y2="13"/>
-                              <line x1="16" y1="17" x2="8" y2="17"/>
-                            </svg>
-                            Download Payment Receipt
-                          </button>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <div className={styles.paidSuccess}>
@@ -817,10 +646,10 @@ export default function PatientPortal() {
                       <p>Thank you for your payment. Your account has been settled.</p>
                       <button className={styles.printReceiptBtn} onClick={handlePrintReceipt}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                          <polyline points="14,2 14,8 20,8"/>
-                          <line x1="16" y1="13" x2="8" y2="13"/>
-                          <line x1="16" y1="17" x2="8" y2="17"/>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14,2 14,8 20,8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
                         </svg>
                         Download Official Receipt
                       </button>
@@ -829,7 +658,7 @@ export default function PatientPortal() {
                 </div>
 
                 {/* Printable Receipt Footer (Hidden in UI) */}
-                <div className={styles.printableReceipt} style={{ marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
+                <div className="print-only" style={{ display: 'none', marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
                     <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
                     <div style={{ textAlign: 'left' }}>
@@ -837,21 +666,14 @@ export default function PatientPortal() {
                       <p style={{ margin: 0, fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>Official Payment Receipt</p>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
                     <div>
-                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b', display: 'block' }}>Patient Name</label>
+                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b' }}>Receipt To:</label>
                       <div style={{ fontWeight: 700 }}>{bill.patientName}</div>
-                      <div style={{ fontSize: '12px', color: '#475569' }}>ID: P{String(bill.patientId).padStart(4, '0')}</div>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b', display: 'block' }}>Visit Details</label>
-                      <div style={{ fontWeight: 700 }}>{bill.billNumber}</div>
-                      <div style={{ fontSize: '12px', color: '#475569' }}>Status: {bill.status}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b', display: 'block' }}>Receipt Date</label>
+                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b' }}>Receipt Date:</label>
                       <div style={{ fontWeight: 700 }}>{new Date().toLocaleDateString()}</div>
-                      <div style={{ fontSize: '12px', color: '#475569' }}>Time: {new Date().toLocaleTimeString()}</div>
                     </div>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '32px' }}>
@@ -1060,18 +882,18 @@ export default function PatientPortal() {
                         RWF {item.balanceDue.toLocaleString()}
                       </div>
                       <div className={styles.hCardActions}>
-                        <button 
+                        <button
                           className={styles.viewBtn}
                           onClick={() => { setBill(item); setActiveTab('current'); }}
                           title="View Details"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
                           </svg>
                         </button>
                         {item.totalPaid > 0 && (
-                          <button 
+                          <button
                             className={styles.receiptBtn}
                             onClick={() => {
                               setBill(item);
@@ -1080,10 +902,10 @@ export default function PatientPortal() {
                             title="Download Receipt"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                              <polyline points="14,2 14,8 20,8"/>
-                              <line x1="16" y1="13" x2="8" y2="13"/>
-                              <line x1="16" y1="17" x2="8" y2="17"/>
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                              <polyline points="14,2 14,8 20,8" />
+                              <line x1="16" y1="13" x2="8" y2="13" />
+                              <line x1="16" y1="17" x2="8" y2="17" />
                             </svg>
                           </button>
                         )}
@@ -1101,6 +923,17 @@ export default function PatientPortal() {
                   <button onClick={fetchSecureHistory} className={styles.btn} style={{ padding: '10px 24px', fontSize: '14px' }}>Check Again</button>
                 </div>
               )}
+            </div>
+          )}
+
+          {['profile', 'reports', 'complaints'].includes(activeTab) && !user && (
+            <div className={styles.authCard} style={{ maxWidth: '400px', margin: '0 auto' }}>
+              <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔒</div>
+              <h2>Login Required</h2>
+              <p style={{ color: '#64748b', marginBottom: '20px' }}>You need to be logged in to access this section.</p>
+              <button className={styles.btn} onClick={() => setActiveTab('history')}>
+                Login / Register
+              </button>
             </div>
           )}
 
@@ -1379,6 +1212,31 @@ export default function PatientPortal() {
           )}
         </div>
       </main>
+      {/* Dispute Modal — rendered at root level to avoid stacking context issues */}
+      {activeDisputeItem && (
+        <div className={styles.disputeOverlay}>
+          <div className={styles.disputeForm}>
+            <h3>Report Issue: {activeDisputeItem.description}</h3>
+            <p>Describe the issue with this charge (e.g., incorrect price, service not received).</p>
+            <form onSubmit={handleRaiseDispute}>
+              {disputeError && <div className={styles.error} style={{ marginBottom: '12px' }}>{disputeError}</div>}
+              <textarea
+                className={styles.textarea}
+                placeholder="Enter details here..."
+                value={disputeReason}
+                onChange={e => setDisputeReason(e.target.value)}
+                required
+              />
+              <div className={styles.modalActions}>
+                <button type="button" onClick={() => { setActiveDisputeItem(null); setDisputeError('') }} className={styles.backBtn} disabled={disputeLoading}>Cancel</button>
+                <button type="submit" className={styles.payBtn} style={{ padding: '8px 24px' }} disabled={disputeLoading}>
+                  {disputeLoading ? 'Submitting...' : 'Submit Complaint'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

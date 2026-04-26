@@ -63,14 +63,20 @@ namespace HospitalBilling.Controllers
             var departmentRevenue = await deptQuery
                 .GroupBy(bi => bi.Category)
                 .Select(g => new {
-                    Department = g.Key.ToString(),
+                    Department = g.Key,
                     Revenue = g.Sum(x => x.Quantity * x.UnitPrice)
                 })
                 .ToListAsync();
 
+            var departmentRevenueResult = departmentRevenue
+                .Select(x => new {
+                    Department = x.Department.ToString(),
+                    x.Revenue
+                }).ToList();
+
             return Ok(new {
                 TotalRevenue = totalRevenue,
-                DepartmentRevenue = departmentRevenue
+                DepartmentRevenue = departmentRevenueResult
             });
         }
 
@@ -89,15 +95,15 @@ namespace HospitalBilling.Controllers
                 })
                 .ToListAsync();
 
-            var trends = rawTrends
+            var trendsResult = rawTrends
                 .OrderBy(x => x.Date)
                 .Select(x => new
                 {
                     Date = x.Date.ToString("yyyy-MM-dd"),
                     x.Amount
-                });
+                }).ToList();
 
-            return Ok(trends);
+            return Ok(trendsResult);
         }
 
         [HttpGet("debts")]

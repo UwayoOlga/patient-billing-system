@@ -60,8 +60,8 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
 app.UseCors("Frontend");
+// app.UseHttpsRedirection(); // Disabled to prevent CORS preflight redirect issues
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

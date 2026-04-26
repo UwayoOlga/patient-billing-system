@@ -50,8 +50,8 @@ export default function LabDashboard() {
       
       // Only keep open/finalized visits that actually have at least one Lab Test requested
       const visitsWithLabWork = data.filter(b => 
-        (b.status === 'Open' || b.status === 'ConsultationDone' || b.status === 'Finalized') && 
-        b.items.some(i => i.category === 'LabTest')
+        (b.status === 'Open' || b.status === 'ConsultationDone' || b.status === 'DoctorCompleted' || b.status === 'Finalized') && 
+        b.items.some(i => i.category === 'LabTest' || i.category === 'PrescribedTest')
       )
       setAllVisits(visitsWithLabWork)
       
@@ -59,7 +59,7 @@ export default function LabDashboard() {
       const completed = []
       data.forEach(bill => {
         bill.items.forEach(item => {
-          if (item.category === 'LabTest') {
+          if (item.category === 'LabTest' || item.category === 'PrescribedTest') {
             const t = { ...item, patientName: bill.patientName, billNumber: bill.billNumber }
             if (item.isCompleted) completed.push(t)
             else pending.push(t)

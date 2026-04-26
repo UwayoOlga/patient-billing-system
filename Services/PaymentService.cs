@@ -24,7 +24,7 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(b => b.Id == dto.BillId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.Finalized && bill.Status != BillStatus.Paid)
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.Finalized && bill.Status != BillStatus.Paid && bill.Status != BillStatus.DoctorCompleted)
                 throw new InvalidOperationException("This bill cannot accept payments in its current state.");
 
             if (dto.Amount > bill.BalanceDue && dto.Amount > 0)

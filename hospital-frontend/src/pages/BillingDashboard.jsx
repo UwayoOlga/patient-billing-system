@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import styles from './BillingDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
 import logo from '../assets/logo.jpg'
 import PaymentProcessingModal from '../components/PaymentProcessingModal'
-import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
 export default function BillingDashboard() {
   const [user, setUserState] = useState(getUser())
@@ -48,7 +48,9 @@ export default function BillingDashboard() {
     }
   })
 
+
   useEffect(() => { fetchBills() }, [])
+
   useEffect(() => {
     if (activeTab === 'reports') {
       fetchCashierReport()
@@ -56,13 +58,7 @@ export default function BillingDashboard() {
     if (activeTab === 'disputes') {
       fetchDisputes(disputeFilter === 'open')
     }
-  }, [activeTab])
-
-  useEffect(() => {
-    if (activeTab === 'disputes') {
-      fetchDisputes(disputeFilter === 'open')
-    }
-  }, [disputeFilter])
+  }, [activeTab, disputeFilter])
 
   async function fetchBills() {
     setLoading(true)
@@ -415,22 +411,41 @@ export default function BillingDashboard() {
               </div>
             </div>
 
-            <div className={styles.tableCard} style={{ padding: '24px' }}>
-              <h3 className={styles.sectionTitle}>Revenue Breakdown by Payment Method</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-                {cashierReport.paymentMethodSummary.map(method => (
-                  <div key={method.method} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
-                    <span style={{ fontWeight: 600 }}>{method.method} ({method.count})</span>
-                    <span style={{ fontWeight: 700, color: '#0f172a' }}>RWF {method.amount.toLocaleString()}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+              <div className={styles.tableCard} style={{ padding: '24px' }}>
+                <h3 className={styles.sectionTitle} style={{ marginBottom: '16px' }}>Revenue Breakdown by Payment Method</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {cashierReport.paymentMethodSummary.map(method => (
+                    <div key={method.method} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontWeight: 600 }}>{method.method} ({method.count})</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>RWF {method.amount.toLocaleString()}</span>
+                    </div>
+                  ))}
+                  {cashierReport.paymentMethodSummary.length === 0 && (
+                    <div className={styles.empty}>No confirmed payments found in selected range.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className={styles.tableCard} style={{ padding: '24px' }}>
+                <h3 className={styles.sectionTitle} style={{ marginBottom: '16px' }}>Recent Report Summary</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                    <span>Report Period</span>
+                    <span style={{ fontWeight: 600 }}>{new Date(reportRange.start).toLocaleDateString()} to {new Date(reportRange.end).toLocaleDateString()}</span>
                   </div>
-                ))}
-                {cashierReport.paymentMethodSummary.length === 0 && (
-                  <div className={styles.empty}>No confirmed payments found in selected range.</div>
-                )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                    <span>Generation Date</span>
+                    <span style={{ fontWeight: 600 }}>{new Date().toLocaleString()}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className={styles.tableCard} style={{ marginTop: '20px' }}>
+            <div className={styles.tableCard}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, fontSize: '15px' }}>
+                Transaction Details ({cashierReport.transactions.length})
+              </div>
               <table className={styles.table}>
                 <thead>
                   <tr>

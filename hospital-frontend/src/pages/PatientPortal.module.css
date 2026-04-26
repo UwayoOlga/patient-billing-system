@@ -755,6 +755,9 @@
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .viewBtn:hover {
@@ -928,6 +931,19 @@
   box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
 }
 
+.formGroup label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.subHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
 .modalActions {
   display: flex;
   gap: 12px;
@@ -1009,4 +1025,94 @@
   .itemPrice {
     text-align: left;
   }
+}
+
+/* ─── Payment Section ─── */
+.paySection {
+  margin-top: 32px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 28px;
+}
+
+.payPrompt {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+
+.payPrompt h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+.payPrompt p {
+  color: #64748b;
+  font-size: 14px;
+  margin: 0 0 20px;
+}
+
+.paidSuccess {
+  text-align: center;
+  padding: 40px 20px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 20px;
+}
+
+.successIcon {
+  width: 56px;
+  height: 56px;
+  background: #059669;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 900;
+  margin: 0 auto 16px;
+}
+
+.paidSuccess h3 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #166534;
+  margin: 0 0 8px;
+}
+
+.paidSuccess p {
+  color: #15803d;
+  font-size: 14px;
+  margin: 0 0 20px;
+}
+
+.printReceiptBtn {
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.printReceiptBtn:hover {
+  background: #1e293b;
+  transform: translateY(-1px);
+}
+
+.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
 }
