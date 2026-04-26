@@ -241,8 +241,8 @@ export default function LabDashboard() {
           <div class="header">
             <img src="${logo}" style="width: 60px; height: 60px; border-radius: 12px; object-fit: cover;" />
             <div class="hospital-info">
-              <h1>HOSPITALBILLING</h1>
-              <p>Excellence in Healthcare | Clinical Laboratory</p>
+              <h1>HOSPITAL BILLING SYSTEM</h1>
+              <p>Professional Healthcare Management | Clinical Laboratory</p>
             </div>
           </div>
 

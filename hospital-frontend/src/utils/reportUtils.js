@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import 'jspdf-autotable'
 import logo from '../assets/logo.jpg'
 
 /**
@@ -24,24 +25,29 @@ export function createStandardReportHeader(doc, reportTitle, reportSubtitle, opt
   doc.setFillColor(15, 23, 42) // Dark blue
   doc.rect(0, 0, pageW, 45, 'F')
 
-  // Hospital Logo Circle
-  doc.setFillColor(255, 255, 255)
-  doc.circle(28, 22, 10, 'F')
-  doc.setFontSize(16)
-  doc.setTextColor(15, 23, 42)
-  doc.setFont('helvetica', 'bold')
-  doc.text('H', 28, 27, { align: 'center' })
+  // Hospital Logo
+  try {
+    doc.addImage(logo, 'JPEG', margin, 12, 20, 20)
+  } catch (err) {
+    // Fallback if image fails
+    doc.setFillColor(255, 255, 255)
+    doc.circle(24, 22, 10, 'F')
+    doc.setFontSize(16)
+    doc.setTextColor(15, 23, 42)
+    doc.setFont('helvetica', 'bold')
+    doc.text('H', 24, 27, { align: 'center' })
+  }
 
   // Hospital Name and System Title
   doc.setFontSize(20)
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
-  doc.text('RWANDA DIGITAL MEDICAL CENTER', 45, 18)
+  doc.text('HOSPITAL BILLING SYSTEM', 45, 18)
   
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(200, 220, 240)
-  doc.text('Excellence in Healthcare | Digital Health Management System', 45, 25)
+  doc.text('Professional Healthcare Management Solution', 45, 25)
 
   // Report Title and Info
   doc.setFontSize(14)
@@ -128,7 +134,7 @@ export function createStandardReportFooter(doc, options = {}) {
   doc.setFont('helvetica', 'italic')
   doc.setFontSize(7)
   doc.setTextColor(150, 160, 170)
-  doc.text('Rwanda Digital Medical Center — Professional Healthcare Management', rightEdge, pageH - 6, { align: 'right' })
+  doc.text('Hospital Billing System — Professional Healthcare Management', rightEdge, pageH - 6, { align: 'right' })
 }
 
 /**
@@ -144,31 +150,129 @@ export function createStandardTable(doc, headers, data, startY, options = {}) {
     headerColor = [15, 23, 42],
     alternateRowColor = [248, 250, 252],
     fontSize = 8,
-    theme = 'striped'
+    theme = 'striped',
+    columnWidths = null
   } = options
 
-  doc.autoTable({
-    startY: startY,
-    head: [headers],
-    body: data,
-    theme: theme,
-    headStyles: { 
-      fillColor: headerColor,
-      textColor: [255, 255, 255],
-      fontSize: fontSize,
-      fontStyle: 'bold'
-    },
-    bodyStyles: {
-      fontSize: fontSize - 0.5
-    },
-    alternateRowStyles: {
-      fillColor: alternateRowColor
-    },
-    margin: { left: 14, right: 14 },
-    tableWidth: 'auto'
+  // Check if autoTable is available
+  if (typeof doc.autoTable === 'function') {
+    try {
+      doc.autoTable({
+        startY: startY,
+        head: [headers],
+        body: data,
+        theme: theme,
+        headStyles: { 
+          fillColor: headerColor,
+          textColor: [255, 255, 255],
+          fontSize: fontSize,
+          fontStyle: 'bold'
+        },
+        bodyStyles: {
+          fontSize: fontSize - 0.5
+        },
+        alternateRowStyles: {
+          fillColor: alternateRowColor
+        },
+        margin: { left: 14, right: 14 },
+        tableWidth: 'auto',
+        columnStyles: columnWidths ? columnWidths.reduce((acc, width, index) => {
+          acc[index] = { cellWidth: width }
+          return acc
+        }, {}) : {}
+      })
+
+      return doc.lastAutoTable.finalY
+    } catch (error) {
+      console.warn('autoTable failed, falling back to manual table:', error)
+    }
+  }
+
+  // Fallback: Manual table implementation
+  return createManualTable(doc, headers, data, startY, options)
+}
+
+/**
+ * Manual table implementation as fallback
+ * @param {jsPDF} doc - The jsPDF document instance
+ * @param {Array} headers - Table headers
+ * @param {Array} data - Table data
+ * @param {number} startY - Starting Y position
+ * @param {Object} options - Table styling options
+ */
+function createManualTable(doc, headers, data, startY, options = {}) {
+  const {
+    headerColor = [15, 23, 42],
+    alternateRowColor = [248, 250, 252],
+    fontSize = 8,
+    columnWidths = null
+  } = options
+
+  const margin = 14
+  const pageWidth = 196
+  const rowHeight = 6
+  let y = startY
+
+  // Calculate column widths
+  const numCols = headers.length
+  const defaultColWidth = (pageWidth - margin * 2) / numCols
+  const colWidths = columnWidths || Array(numCols).fill(defaultColWidth)
+  
+  // Ensure column widths fit within page
+  const totalWidth = colWidths.reduce((sum, width) => sum + width, 0)
+  if (totalWidth > pageWidth - margin * 2) {
+    const scale = (pageWidth - margin * 2) / totalWidth
+    colWidths.forEach((width, i) => colWidths[i] = width * scale)
+  }
+
+  // Draw header
+  doc.setFillColor(...headerColor)
+  doc.rect(margin, y, pageWidth - margin * 2, rowHeight, 'F')
+  
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(fontSize)
+  doc.setTextColor(255, 255, 255)
+  
+  let x = margin
+  headers.forEach((header, i) => {
+    doc.text(header, x + 2, y + 4)
+    x += colWidths[i]
+  })
+  
+  y += rowHeight
+
+  // Draw data rows
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(fontSize - 0.5)
+  doc.setTextColor(15, 23, 42)
+
+  data.forEach((row, rowIndex) => {
+    // Alternate row colors
+    if (rowIndex % 2 === 1) {
+      doc.setFillColor(...alternateRowColor)
+      doc.rect(margin, y, pageWidth - margin * 2, rowHeight, 'F')
+    }
+
+    x = margin
+    row.forEach((cell, colIndex) => {
+      const cellText = String(cell || '')
+      // Truncate text if too long
+      const maxChars = Math.floor(colWidths[colIndex] / 2.5)
+      const displayText = cellText.length > maxChars ? 
+        cellText.substring(0, maxChars - 3) + '...' : cellText
+      
+      doc.text(displayText, x + 2, y + 4)
+      x += colWidths[colIndex]
+    })
+    
+    y += rowHeight
   })
 
-  return doc.lastAutoTable.finalY
+  // Draw table border
+  doc.setDrawColor(200, 210, 220)
+  doc.rect(margin, startY, pageWidth - margin * 2, y - startY)
+
+  return y + 5
 }
 
 /**

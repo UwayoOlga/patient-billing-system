@@ -29,7 +29,7 @@ Complete hospital billing solution covering patient registration, medical servic
 ### Admin Credentials
 ```
 Email: admin@hospital.rw
-Password: admin123
+Password: 12345
 ```
 
 ### User Roles
@@ -38,9 +38,10 @@ Password: admin123
 - **Administrative Staff**: Receptionists, Cashiers
 - **Patients**: Can self-register or be registered by reception staff
 
-### Patient Access Types
+### Patient Access Types (Dual-Access Model)
 
-**IMPORTANT**: The system supports two distinct types of patient access:
+> [!IMPORTANT]
+> The system provides two distinct ways for patients to access the portal. One requires authentication for full medical records, while the other provides guest access for quick payments.
 
 #### 1. Registered Patient Access (Full Features)
 - **Login Required**: Patients create accounts and login with email/phone and password
@@ -104,7 +105,7 @@ npm run dev
 
 **System Administrator** (Creates all other users):
 - Email: `admin@hospital.rw`
-- Password: `admin123`
+- Password: `12345`
 
 **Test Cashier Account**:
 - Email: `cashier@hospital.rw`

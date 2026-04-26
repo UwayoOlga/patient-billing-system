@@ -4,10 +4,16 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
+} from 'recharts'
 import styles from './BillingDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
 import logo from '../assets/logo.jpg'
 import PaymentProcessingModal from '../components/PaymentProcessingModal'
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D']
 
 export default function BillingDashboard() {
   const [user, setUserState] = useState(getUser())
@@ -31,6 +37,16 @@ export default function BillingDashboard() {
   const [disputeFilter, setDisputeFilter] = useState('open')
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState('')
+  const [dashboardData, setDashboardData] = useState({
+    todayRevenue: 0,
+    weekRevenue: 0,
+    monthRevenue: 0,
+    totalOutstanding: 0,
+    revenueChart: [],
+    paymentMethodChart: [],
+    dailyTrends: [],
+    topPatients: []
+  })
   const [cashierReport, setCashierReport] = useState({
     totalCollected: 0,
     totalTransactions: 0,
@@ -49,7 +65,10 @@ export default function BillingDashboard() {
   })
 
 
-  useEffect(() => { fetchBills() }, [])
+  useEffect(() => { 
+    fetchBills()
+    fetchDashboardData()
+  }, [])
 
   useEffect(() => {
     if (activeTab === 'reports') {
@@ -60,11 +79,82 @@ export default function BillingDashboard() {
     }
   }, [activeTab, disputeFilter])
 
+  async function fetchDashboardData() {
+    try {
+      const [paymentsRes, trendsRes] = await Promise.all([
+        api.get('/payment/reports/cashier'),
+        api.get('/adminfinance/trends')
+      ])
+
+      const payments = paymentsRes.data
+      const trends = trendsRes.data
+
+      // Calculate dashboard metrics
+      const today = new Date().toDateString()
+      const thisWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      const thisMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+      const todayRevenue = payments.transactions?.filter(t => 
+        new Date(t.paidAt).toDateString() === today
+      ).reduce((sum, t) => sum + t.amount, 0) || 0
+
+      const weekRevenue = payments.transactions?.filter(t => 
+        new Date(t.paidAt) >= thisWeek
+      ).reduce((sum, t) => sum + t.amount, 0) || 0
+
+      const monthRevenue = payments.transactions?.filter(t => 
+        new Date(t.paidAt) >= thisMonth
+      ).reduce((sum, t) => sum + t.amount, 0) || 0
+
+      // Payment method breakdown
+      const paymentMethodChart = payments.paymentMethodSummary?.map(method => ({
+        name: method.method,
+        value: method.amount,
+        count: method.count
+      })) || []
+
+      // Daily trends for chart
+      const dailyTrends = trends?.map(trend => ({
+        date: new Date(trend.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        revenue: trend.amount
+      })) || []
+
+      setDashboardData({
+        todayRevenue,
+        weekRevenue,
+        monthRevenue,
+        totalOutstanding: 0, // Will be calculated from bills
+        revenueChart: paymentMethodChart,
+        paymentMethodChart,
+        dailyTrends,
+        topPatients: []
+      })
+    } catch (err) {
+      console.error('Failed to fetch dashboard data', err)
+    }
+  }
+
   async function fetchBills() {
     setLoading(true)
     try {
       const { data } = await api.get('/bills')
-      setBills(data)
+      // Only show bills as "Paid" if they have no balance due
+      const processedBills = data.map(bill => {
+        let displayStatus = bill.status;
+        if (bill.balanceDue <= 0 && bill.totalPaid > 0) {
+          displayStatus = 'Paid';
+        } else if (bill.totalPaid > 0 && bill.balanceDue > 0) {
+          displayStatus = 'Partial';
+        }
+        return { ...bill, status: displayStatus };
+      })
+      setBills(processedBills)
+      
+      // Update total outstanding
+      const totalOutstanding = processedBills.reduce((acc, b) => 
+        acc + (b.status !== 'Paid' ? b.balanceDue : 0), 0
+      )
+      setDashboardData(prev => ({ ...prev, totalOutstanding }))
     } catch (err) {
       console.error('Failed to fetch bills', err)
     } finally {
@@ -178,18 +268,23 @@ export default function BillingDashboard() {
   })
 
   // Stats calculation
-  const totalOutstanding = bills.reduce((acc, b) => acc + (b.status !== 'Paid' ? b.balanceDue : 0), 0)
+  const totalOutstanding = dashboardData.totalOutstanding
   const openCount = bills.filter(b => b.status === 'Open').length
   const finalizedCount = bills.filter(b => b.status === 'Finalized').length
+  const paidCount = bills.filter(b => b.status === 'Paid').length
 
   const navItems = [
     {
-      key: 'dashboard', label: 'Dashboard',
+      key: 'dashboard', label: 'Analytics',
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+    },
+    {
+      key: 'bills', label: 'Bill Management',
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
     },
     {
       key: 'reports', label: 'Daily Reports',
-      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
     },
     {
       key: 'disputes', label: 'Bill Disputes',
@@ -259,6 +354,10 @@ export default function BillingDashboard() {
             {/* Stats */}
             <div className={styles.statsRow}>
               <div className={styles.statCard}>
+                <div className={styles.statLabel}>Today's Collection</div>
+                <div className={styles.statValue} style={{ color: '#059669' }}>RWF {dashboardData.todayRevenue.toLocaleString()}</div>
+              </div>
+              <div className={styles.statCard}>
                 <div className={styles.statLabel}>Total Outstanding</div>
                 <div className={styles.statValue}>RWF {totalOutstanding.toLocaleString()}</div>
               </div>
@@ -270,9 +369,66 @@ export default function BillingDashboard() {
                 <div className={styles.statLabel}>Finalized</div>
                 <div className={styles.statValue}>{finalizedCount}</div>
               </div>
-              <div className={styles.statCard}>
-                <div className={styles.statLabel}>Total Records</div>
-                <div className={styles.statValue}>{bills.length}</div>
+            </div>
+
+            {/* Graphs / Analytics */}
+            <div className={styles.chartsGrid}>
+              <div className={styles.chartCard}>
+                <h3 className={styles.chartTitle}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  Revenue Trends (Last 7 Days)
+                </h3>
+                <div className={styles.chartContainer}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={dashboardData.dailyTrends}>
+                      <defs>
+                        <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.1}/>
+                          <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `RWF ${value >= 1000 ? (value/1000) + 'k' : value}`} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => [`RWF ${value.toLocaleString()}`, 'Revenue']}
+                      />
+                      <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className={styles.chartCard}>
+                <h3 className={styles.chartTitle}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                  Payment Method Distribution
+                </h3>
+                <div className={styles.chartContainer}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={dashboardData.paymentMethodChart}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {dashboardData.paymentMethodChart.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => `RWF ${value.toLocaleString()}`}
+                      />
+                      <Legend verticalAlign="bottom" height={36}/>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
 

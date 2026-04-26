@@ -7,7 +7,7 @@ namespace HospitalBilling.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Cashier")]
     public class AdminFinanceController : ControllerBase
     {
         private readonly AppDbContext _db;
@@ -109,20 +109,26 @@ namespace HospitalBilling.Controllers
         [HttpGet("debts")]
         public async Task<IActionResult> GetOutstandingDebts()
         {
-            var debts = await _db.Bills
+            var bills = await _db.Bills
                 .AsNoTracking()
                 .Include(b => b.Patient)
+                .Include(b => b.Items)
                 .Include(b => b.Payments)
-                .Where(b => b.TotalAmount > b.Payments.Where(p => p.IsConfirmed).Sum(p => (decimal?)p.Amount).GetValueOrDefault())
+                .Where(b => b.Status == HospitalBilling.Enums.BillStatus.Finalized || b.Status == HospitalBilling.Enums.BillStatus.Paid)
+                .ToListAsync();
+
+            var debts = bills
+                .Where(b => b.TotalAmount > 0 && b.BalanceDue > 0)
                 .Select(b => new
                 {
                     b.Id,
                     PatientName = b.Patient.FullName,
                     TotalAmount = b.TotalAmount,
-                    TotalPaid = b.Payments.Where(p => p.IsConfirmed).Sum(p => (decimal?)p.Amount).GetValueOrDefault()
+                    TotalPaid = b.TotalPaid,
+                    BalanceDue = b.BalanceDue
                 })
-                .OrderByDescending(b => b.TotalAmount - b.TotalPaid)
-                .ToListAsync();
+                .OrderByDescending(b => b.BalanceDue)
+                .ToList();
 
             return Ok(debts);
         }

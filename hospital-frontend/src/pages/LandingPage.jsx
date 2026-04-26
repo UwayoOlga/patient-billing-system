@@ -11,7 +11,7 @@ export default function LandingPage() {
         <div className={styles.container} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
           <Link to="/" className={styles.logo}>
             <img src={logo} alt="Hospital Logo" className={styles.logoImage} />
-            <span className={styles.logoText}>HospitalBilling</span>
+            <span className={styles.logoText}>Hospital Billing System</span>
           </Link>
           <div className={styles.navLinks}>
             <Link to="/patient/view" style={{ textDecoration: 'none', color: '#475569', fontWeight: 600, fontSize: '14px' }}>Patient Portal</Link>
@@ -183,7 +183,7 @@ export default function LandingPage() {
         <div className={styles.container}>
           <div className={styles.footerGrid}>
             <div className={styles.footerBrand}>
-              <h2>HospitalBilling</h2>
+              <h2>Hospital Billing System</h2>
               <p>Professional healthcare management and billing solution designed for the modern medical institution.</p>
             </div>
             <div className={styles.footerLinks}>
@@ -204,7 +204,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className={styles.footerBottom}>
-            <p>© {new Date().getFullYear()} HospitalBilling System. Developed for Rwanda Digital Medical Center.</p>
+            <p>© {new Date().getFullYear()} Hospital Billing System. Professional Healthcare Management.</p>
             <p>Privacy Policy | Audit Transparency</p>
           </div>
         </div>

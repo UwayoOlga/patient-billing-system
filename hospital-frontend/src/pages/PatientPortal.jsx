@@ -375,7 +375,7 @@ export default function PatientPortal() {
       <nav className={styles.topNav}>
         <div className={styles.brand} onClick={() => { setActiveTab('current'); setError(''); }}>
           <img src={logo} alt="Logo" className={styles.logoImage} />
-          <span className={styles.brandText}>HOSPITALBILLING</span>
+          <span className={styles.brandText}>HOSPITAL BILLING SYSTEM</span>
         </div>
 
         <div className={styles.navLinks}>
@@ -660,9 +660,9 @@ export default function PatientPortal() {
                 {/* Printable Receipt Footer (Hidden in UI) */}
                 <div className="print-only" style={{ display: 'none', marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-                    <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
+                    <img src={logo} alt="Logo" style={{ width: '50px', height: '50px', borderRadius: '12px', objectFit: 'cover' }} />
                     <div style={{ textAlign: 'left' }}>
-                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>RWANDA DIGITAL MEDICAL CENTER</h2>
+                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>HOSPITAL BILLING SYSTEM</h2>
                       <p style={{ margin: 0, fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>Official Payment Receipt</p>
                     </div>
                   </div>

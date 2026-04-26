@@ -96,10 +96,10 @@ export default function PaymentProcessingModal({ billId, onClose, onPaymentSucce
           {/* Printable Hospital Header (Only visible on print) */}
           <div className={styles.printHeader} style={{ display: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '3px solid #0f172a', paddingBottom: '20px', marginBottom: '24px' }}>
-              <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
+              <img src={logo} alt="Logo" style={{ width: '50px', height: '50px', borderRadius: '12px', objectFit: 'cover' }} />
               <div style={{ textAlign: 'left' }}>
-                <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>RWANDA DIGITAL MEDICAL CENTER</h2>
-                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Excellence in Healthcare | Official Receipt</p>
+                <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>HOSPITAL BILLING SYSTEM</h2>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Professional Healthcare Management | Official Receipt</p>
               </div>
             </div>
             <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#475569' }}>Generated on: {new Date().toLocaleString()}</p>

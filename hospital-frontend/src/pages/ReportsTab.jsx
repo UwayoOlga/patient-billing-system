@@ -284,7 +284,7 @@ export default function ReportsTab() {
         <div className={styles.chartCard}>
           <h4>Revenue Trend (Last 7 Days)</h4>
           <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%">
               <LineChart data={trends}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
@@ -300,7 +300,7 @@ export default function ReportsTab() {
         <div className={styles.chartCard}>
           <h4>Revenue by Department</h4>
           <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={summary.departmentRevenue}

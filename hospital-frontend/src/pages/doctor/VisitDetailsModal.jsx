@@ -277,10 +277,10 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
           {/* Printable Hospital Header */}
           <div className={styles.hospitalHeader}>
             <div className={styles.logoRow}>
-              <div className={styles.logoCircle}>H</div>
+              <img src={logo} alt="Logo" style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }} />
               <div className={styles.hospitalInfo}>
-                <h2>RWANDA DIGITAL MEDICAL CENTER</h2>
-                <p className={styles.hospitalMotto}>Excellence in Healthcare | Clinical Summary</p>
+                <h2>HOSPITAL BILLING SYSTEM</h2>
+                <p className={styles.hospitalMotto}>Professional Healthcare Management | Clinical Summary</p>
               </div>
             </div>
           </div>

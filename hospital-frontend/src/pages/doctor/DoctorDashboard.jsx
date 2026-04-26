@@ -29,7 +29,6 @@ export default function DoctorDashboard() {
   const [loading, setLoading] = useState(true)
   const [patientsLoading, setPatientsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [trashBills, setTrashBills] = useState([])
   const [profileForm, setProfileForm] = useState({ fullName: '', newPassword: '' })
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [notification, setNotification] = useState({ message: '', type: 'success', icon: null })
@@ -38,7 +37,6 @@ export default function DoctorDashboard() {
 
   useEffect(() => {
     if (activeTab === 'patients') fetchPatients()
-    if (activeTab === 'trash') fetchTrash()
   }, [activeTab])
 
   async function fetchBills() {
@@ -76,40 +74,6 @@ export default function DoctorDashboard() {
     }
   }
 
-  async function fetchTrash() {
-    setLoading(true)
-    try {
-      const { data } = await api.get('/bills/summary?trash=true')
-      setTrashBills(data.filter(b => b.status === 'Trash'))
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false)
-    }
-  }
-
-
-  async function restoreBill(billId) {
-    try {
-      await api.patch(`/bills/${billId}/restore`)
-      await fetchTrash()
-      await fetchBills()
-    } catch (err) {
-      alert(err.response?.data?.message || 'Restore failed')
-    }
-  }
-
-  async function permanentDelete(billId) {
-    if (!window.confirm("PERMANENT DELETE: This will completely erase this record from the database. Proceed?")) return
-    try {
-      await api.delete(`/bills/${billId}/permanent`)
-      await fetchTrash()
-      showNotification('Visit record permanently deleted.', 'success')
-    } catch (err) {
-      showNotification(err.response?.data?.message || 'Delete failed', 'error')
-    }
-  }
-
   function showNotification(message, type = 'success', icon = null) {
     setNotification({ message, type, icon })
     setTimeout(() => setNotification({ message: '', type: 'success', icon: null }), 5000)
@@ -121,7 +85,6 @@ export default function DoctorDashboard() {
   }
 
   const activeVisits = bills.filter(b => b.status === 'Open')
-  const completedVisits = bills.filter(b => b.status !== 'Open' && b.status !== 'Trash')
   
   // Show in "Completed Today":
   // 1. Bills created today that are completed
@@ -134,7 +97,7 @@ export default function DoctorDashboard() {
     if (b.status === 'ConsultationDone') return true
     
     // Include other completed bills created today
-    if (billDate === today && b.status !== 'Open' && b.status !== 'Trash') return true
+    if (billDate === today && b.status !== 'Open') return true
     
     return false
   })
@@ -165,10 +128,6 @@ export default function DoctorDashboard() {
     {
       key: 'reports', label: 'Reports',
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
-    },
-    {
-      key: 'trash', label: 'Trash',
-      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
     },
     {
       key: 'profile', label: 'Profile',
@@ -434,37 +393,6 @@ export default function DoctorDashboard() {
                       </div>
                     </div>
                   ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ─── TRASH TAB ─── */}
-        {activeTab === 'trash' && (
-          <>
-            <div className={styles.tabToolbar}>
-              <div className={styles.countBadge}>{trashBills.length} items in trash</div>
-              <p className={styles.toolbarNote}>Visits here are hidden from reports but can be restored.</p>
-            </div>
-
-            {loading ? (
-              <div className={styles.empty}>Loading trash...</div>
-            ) : trashBills.length === 0 ? (
-              <div className={styles.empty}>Your trash is empty.</div>
-            ) : (
-              <div className={styles.trashGrid}>
-                {trashBills.map(bill => (
-                  <div key={bill.id} className={styles.trashCard}>
-                    <div className={styles.trashInfo}>
-                      <div className={styles.trashName}>{bill.patientName}</div>
-                      <div className={styles.trashMeta}>{bill.billNumber} • {new Date(bill.createdAt).toLocaleDateString()}</div>
-                    </div>
-                    <div className={styles.trashActions}>
-                      <button className={styles.restoreBtn} onClick={() => restoreBill(bill.id)}>Restore</button>
-                      <button className={styles.permDeleteBtn} onClick={() => permanentDelete(bill.id)}>Delete Permanently</button>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </>

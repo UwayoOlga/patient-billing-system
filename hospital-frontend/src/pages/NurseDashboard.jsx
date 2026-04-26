@@ -39,6 +39,7 @@ export default function NurseDashboard() {
   })
   const [notification, setNotification] = useState({ message: '', type: 'success' })
   const [reportData, setReportData] = useState(null)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   useEffect(() => {
     fetchNursingOrders()
@@ -161,65 +162,179 @@ export default function NurseDashboard() {
     }
   }
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     if (!reportData) return
-    const doc = new jsPDF()
     
-    // Standardized header
-    const dateRange = `${reportRange.start} to ${reportRange.end}`
-    let y = createStandardReportHeader(
-      doc, 
-      'NURSING PERFORMANCE REPORT', 
-      `Nursing Services & Patient Care Analysis - ${user?.name}`,
-      {
-        generatedBy: `Nurse ${user?.name}`,
-        dateRange: dateRange,
-        additionalInfo: `Total Services Completed: ${reportData.services.length}`
+    setIsDownloading(true)
+    
+    try {
+      const doc = new jsPDF()
+      
+      // Simple header without complex table dependencies
+      const pageW = 210
+      const margin = 14
+      let y = 20
+
+      // Hospital Header
+      doc.setFillColor(15, 23, 42)
+      doc.rect(0, 0, pageW, 35, 'F')
+      
+      doc.setFontSize(18)
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.text('HOSPITAL BILLING SYSTEM', margin, 15)
+      
+      doc.setFontSize(14)
+      doc.text('NURSING PERFORMANCE REPORT', margin, 25)
+      
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Generated: ${new Date().toLocaleString()} | Nurse: ${user?.name || 'Unknown'}`, margin, 30)
+
+      y = 50
+
+      // Report Details
+      doc.setTextColor(15, 23, 42)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(12)
+      doc.text('Clinical Services & Patient Care Analysis', margin, y)
+      y += 10
+
+      const dateRange = `${reportRange.start} to ${reportRange.end}`
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+      doc.text(`Report Period: ${dateRange}`, margin, y)
+      y += 15
+
+      // Summary Statistics
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.text('SUMMARY STATISTICS', margin, y)
+      y += 8
+
+      const stats = [
+        `Total Services Completed: ${reportData.services.length}`,
+        `Unique Patients Served: ${new Set(reportData.services.map(s => s.patientName)).size}`,
+        `Average Services per Day: ${Math.round(reportData.services.length / Math.max(1, Math.ceil((new Date(reportRange.end) - new Date(reportRange.start)) / (1000 * 60 * 60 * 24))))}`,
+        `Generated Date: ${new Date().toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })}`
+      ]
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      stats.forEach(stat => {
+        doc.text(stat, margin, y)
+        y += 6
+      })
+
+      y += 10
+
+      // Service Category Breakdown
+      const categoryStats = reportData.services.reduce((acc, service) => {
+        acc[service.category] = (acc[service.category] || 0) + 1
+        return acc
+      }, {})
+
+      if (Object.keys(categoryStats).length > 0) {
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(11)
+        doc.text('SERVICE CATEGORY BREAKDOWN', margin, y)
+        y += 8
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        Object.entries(categoryStats).forEach(([category, count]) => {
+          const percentage = Math.round((count / reportData.services.length) * 100)
+          doc.text(`${category.replace(/([A-Z])/g, ' $1').trim()}: ${count} (${percentage}%)`, margin, y)
+          y += 6
+        })
+        y += 10
       }
-    )
 
-    // Summary statistics
-    const stats = [
-      { label: 'Total Services Completed', value: reportData.services.length.toString() },
-      { label: 'Patients Served', value: new Set(reportData.services.map(s => s.patientName)).size.toString() },
-      { label: 'Report Period', value: dateRange },
-      { label: 'Generated Date', value: new Date(reportData.generatedAt).toLocaleDateString() }
-    ]
+      // Detailed Services List
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.text('DETAILED NURSING SERVICES LOG', margin, y)
+      y += 8
 
-    y = createStatsSummary(doc, stats, y)
-    y += 10
+      // Simple table headers
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.text('Date', margin, y)
+      doc.text('Time', margin + 25, y)
+      doc.text('Patient', margin + 45, y)
+      doc.text('Bill #', margin + 80, y)
+      doc.text('Service', margin + 105, y)
+      doc.text('Notes', margin + 150, y)
+      y += 5
 
-    // Services table
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(11)
-    doc.setTextColor(15, 23, 42)
-    doc.text('NURSING SERVICES COMPLETED', 14, y)
-    y += 10
+      // Draw header line
+      doc.setDrawColor(200, 210, 220)
+      doc.line(margin, y, 196, y)
+      y += 5
 
-    const tableData = reportData.services.map(s => [
-      new Date(s.completedAt).toLocaleDateString(),
-      s.patientName,
-      s.billNumber,
-      s.description,
-      s.notes || '—'
-    ])
+      // Service data
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      
+      const sortedServices = reportData.services
+        .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+        .slice(0, 30) // Limit to 30 most recent services
 
-    createStandardTable(
-      doc,
-      ['Date', 'Patient Name', 'Bill #', 'Service Description', 'Clinical Notes'],
-      tableData,
-      y,
-      { headerColor: [14, 165, 233] } // Nursing blue
-    )
+      sortedServices.forEach((service, index) => {
+        if (y > 270) { // Check if we need a new page
+          doc.addPage()
+          y = 20
+        }
 
-    // Standardized footer
-    createStandardReportFooter(doc, {
-      customFooterText: 'This report contains confidential nursing care and patient service data.'
-    })
+        const date = new Date(service.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const time = new Date(service.completedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        const patient = service.patientName.length > 15 ? service.patientName.substring(0, 15) + '...' : service.patientName
+        const description = service.description.length > 25 ? service.description.substring(0, 25) + '...' : service.description
+        const notes = service.notes && service.notes.length > 20 ? service.notes.substring(0, 20) + '...' : (service.notes || '—')
 
-    // Save with standardized filename
-    const filename = generateReportFilename('Nursing_Performance', user?.name || 'Nurse', dateRange.replace(' to ', '_to_'))
-    doc.save(filename)
+        // Alternate row background
+        if (index % 2 === 1) {
+          doc.setFillColor(248, 250, 252)
+          doc.rect(margin - 2, y - 3, 184, 8, 'F')
+        }
+
+        doc.text(date, margin, y)
+        doc.text(time, margin + 25, y)
+        doc.text(patient, margin + 45, y)
+        doc.text(service.billNumber, margin + 80, y)
+        doc.text(description, margin + 105, y)
+        doc.text(notes, margin + 150, y)
+        y += 8
+      })
+
+      // Footer
+      const pageH = doc.internal.pageSize.height
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(8)
+      doc.setTextColor(100, 116, 139)
+      doc.text('CONFIDENTIAL: This report contains protected health information and nursing care data.', margin, pageH - 15)
+      doc.text('Handle according to HIPAA guidelines.', margin, pageH - 10)
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '_')
+      const filename = `Nursing_Performance_${user?.name?.replace(/\s+/g, '_') || 'Nurse'}_${reportRange.start.replace(/-/g, '')}_to_${reportRange.end.replace(/-/g, '')}_${timestamp}.pdf`
+      
+      doc.save(filename)
+      
+      // Show success notification
+      showNotification('Nursing performance report downloaded successfully!', 'success')
+    } catch (error) {
+      console.error('PDF generation failed:', error)
+      showNotification('Failed to generate PDF report. Please try again.', 'error')
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   function handlePrintReport() {
@@ -320,10 +435,33 @@ export default function NurseDashboard() {
                   {loading ? 'Processing...' : 'Run Analysis'}
                 </button>
                 {reportData && (
-                  <button onClick={exportToPDF} className={styles.pdfBtn}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Download PDF Report
-                  </button>
+                  <div className={styles.downloadActions}>
+                    <button 
+                      onClick={exportToPDF} 
+                      className={`${styles.pdfDownloadBtn} ${isDownloading ? styles.downloading : ''}`}
+                      disabled={isDownloading}
+                    >
+                      <div className={styles.downloadIcon}>
+                        {isDownloading ? (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={styles.spinIcon}>
+                            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                          </svg>
+                        ) : (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                          </svg>
+                        )}
+                      </div>
+                      <div className={styles.downloadText}>
+                        <span className={styles.downloadLabel}>
+                          {isDownloading ? 'Generating...' : 'Download Report'}
+                        </span>
+                        <span className={styles.downloadFormat}>PDF Format</span>
+                      </div>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -333,7 +471,7 @@ export default function NurseDashboard() {
                 <div className={styles.reportHeader}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                     <img src={logo} alt="Logo" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
-                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900 }}>HOSPITALBILLING</h2>
+                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900 }}>HOSPITAL BILLING SYSTEM</h2>
                   </div>
                   <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>Nursing Performance Report</h1>
                   <p style={{ color: '#64748b', margin: 0 }}>Period: {reportRange.start} to {reportRange.end} | Generated: {reportData.generatedAt}</p>
