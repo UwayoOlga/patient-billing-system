@@ -3,6 +3,7 @@ using HospitalBilling.Services;
 using HospitalBilling.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -65,6 +66,25 @@ app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+var frontendDistPath = Path.Combine(app.Environment.ContentRootPath, "hospital-frontend", "dist");
+if (Directory.Exists(frontendDistPath))
+{
+    var frontendFiles = new PhysicalFileProvider(frontendDistPath);
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = frontendFiles });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = frontendFiles });
+    app.MapFallback(async context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        context.Response.ContentType = "text/html";
+        await context.Response.SendFileAsync(Path.Combine(frontendDistPath, "index.html"));
+    });
+}
 
 // Seed Admin User
 using (var scope = app.Services.CreateScope())
