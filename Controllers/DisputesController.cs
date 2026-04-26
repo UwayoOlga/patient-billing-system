@@ -49,5 +49,16 @@ namespace HospitalBilling.Controllers
             var disputes = await _disputes.GetOpenDisputesAsync();
             return Ok(disputes);
         }
+
+        /// <summary>
+        /// Get disputes list for billing staff (openOnly=true by default).
+        /// </summary>
+        [Authorize(Roles = "Cashier,Admin")]
+        [HttpGet]
+        public async Task<IActionResult> GetDisputes([FromQuery] bool openOnly = true)
+        {
+            var disputes = await _disputes.GetDisputesAsync(openOnly);
+            return Ok(disputes);
+        }
     }
 }

@@ -85,23 +85,46 @@ namespace HospitalBilling.Controllers
         {
             // Revenue for the last 7 days
             var weekAgo = DateTime.UtcNow.Date.AddDays(-7);
-            
-            var trends = await _db.Payments
+
+            var rawTrends = await _db.Payments
                 .Where(p => p.IsConfirmed && p.PaidAt >= weekAgo)
                 .GroupBy(p => p.PaidAt.Date)
                 .Select(g => new {
                     Date = g.Key,
                     Amount = g.Sum(x => x.Amount)
                 })
-                .OrderBy(x => x.Date)
                 .ToListAsync();
 
-            var trendsResult = trends.Select(x => new {
-                Date = x.Date.ToString("yyyy-MM-dd"),
-                x.Amount
-            }).ToList();
+            var trendsResult = rawTrends
+                .OrderBy(x => x.Date)
+                .Select(x => new
+                {
+                    Date = x.Date.ToString("yyyy-MM-dd"),
+                    x.Amount
+                }).ToList();
 
             return Ok(trendsResult);
+        }
+
+        [HttpGet("debts")]
+        public async Task<IActionResult> GetOutstandingDebts()
+        {
+            var debts = await _db.Bills
+                .AsNoTracking()
+                .Include(b => b.Patient)
+                .Include(b => b.Payments)
+                .Where(b => b.TotalAmount > b.Payments.Where(p => p.IsConfirmed).Sum(p => (decimal?)p.Amount).GetValueOrDefault())
+                .Select(b => new
+                {
+                    b.Id,
+                    PatientName = b.Patient.FullName,
+                    TotalAmount = b.TotalAmount,
+                    TotalPaid = b.Payments.Where(p => p.IsConfirmed).Sum(p => (decimal?)p.Amount).GetValueOrDefault()
+                })
+                .OrderByDescending(b => b.TotalAmount - b.TotalPaid)
+                .ToListAsync();
+
+            return Ok(debts);
         }
     }
 }

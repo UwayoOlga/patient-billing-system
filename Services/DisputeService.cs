@@ -68,9 +68,20 @@ namespace HospitalBilling.Services
 
         public async Task<List<DisputeSummaryDto>> GetOpenDisputesAsync()
         {
-            return await _db.Disputes
+            return await GetDisputesAsync(openOnly: true);
+        }
+
+        public async Task<List<DisputeSummaryDto>> GetDisputesAsync(bool openOnly)
+        {
+            var query = _db.Disputes
                 .Include(d => d.Bill).ThenInclude(b => b.Patient)
-                .Where(d => d.Status == DisputeStatus.Open || d.Status == DisputeStatus.UnderReview)
+                .Include(d => d.Bill).ThenInclude(b => b.Payments)
+                .AsQueryable();
+
+            if (openOnly)
+                query = query.Where(d => d.Status == DisputeStatus.Open || d.Status == DisputeStatus.UnderReview);
+
+            return await query
                 .OrderByDescending(d => d.RaisedAt)
                 .Select(d => new DisputeSummaryDto
                 {
@@ -79,7 +90,11 @@ namespace HospitalBilling.Services
                     PatientName = d.Bill.Patient.FullName,
                     Reason = d.Reason,
                     Status = d.Status.ToString(),
-                    RaisedAt = d.RaisedAt
+                    RaisedAt = d.RaisedAt,
+                    BillStatus = d.Bill.Status.ToString(),
+                    TotalAmount = d.Bill.TotalAmount,
+                    TotalPaid = d.Bill.Payments.Where(p => p.IsConfirmed).Sum(p => (decimal?)p.Amount).GetValueOrDefault(),
+                    BalanceDue = d.Bill.TotalAmount - d.Bill.Payments.Where(p => p.IsConfirmed).Sum(p => (decimal?)p.Amount).GetValueOrDefault()
                 })
                 .ToListAsync();
         }

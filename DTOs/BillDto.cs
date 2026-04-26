@@ -19,6 +19,7 @@ namespace HospitalBilling.DTOs
         public string AddedByRole { get; set; } = string.Empty;
         public DateTime AddedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
+        public int? CompletedByStaffId { get; set; }
         public string? Notes { get; set; }
     }
 

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Login from './pages/Login'
 import DoctorDashboard from './pages/doctor/DoctorDashboard'
 import BillingDashboard from './pages/BillingDashboard'
@@ -11,8 +11,43 @@ import AdminDashboard from './pages/AdminDashboard'
 import ReceptionistDashboard from './pages/ReceptionistDashboard'
 import { getUser } from './utils/auth'
 
+import { useEffect, useCallback } from 'react'
+import { logout } from './utils/auth'
+
+const INACTIVITY_LIMIT = 15 * 60 * 1000 // 15 Minutes
+
 function ProtectedRoute({ children, role }) {
   const user = getUser()
+  const navigate = useNavigate()
+
+  const handleLogout = useCallback(() => {
+    logout()
+    window.location.href = '/login'
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+
+    let timeoutId
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(handleLogout, INACTIVITY_LIMIT)
+    }
+
+    // Activity listeners
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
+    events.forEach(name => document.addEventListener(name, resetTimer))
+
+    // Initial timer
+    resetTimer()
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId)
+      events.forEach(name => document.removeEventListener(name, resetTimer))
+    }
+  }, [user, handleLogout])
+
   if (!user) return <Navigate to="/login" replace />
   
   if (role) {
@@ -27,6 +62,8 @@ function ProtectedRoute({ children, role }) {
 }
 
 export default function App() {
+  const navigate = useNavigate() // Needed for routing logic
+
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />

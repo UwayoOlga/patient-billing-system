@@ -62,8 +62,8 @@ namespace HospitalBilling.Services
             var bill = await _db.Bills.Include(b => b.Patient).FirstOrDefaultAsync(b => b.Id == dto.BillId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open)
-                throw new InvalidOperationException("Cannot add items to a bill that is not Open.");
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.ConsultationDone)
+                throw new InvalidOperationException("Cannot add items to a visit that is finalized or closed.");
 
             // Validate category is allowed for this role
             ValidateCategoryForRole(dto.Category, staffRole);
@@ -150,7 +150,7 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(i => i.Id == billItemId)
                 ?? throw new KeyNotFoundException("Bill item not found.");
 
-            if (item.Bill.Status != BillStatus.Open)
+            if (item.Bill.Status != BillStatus.Open && item.Bill.Status != BillStatus.ConsultationDone)
                 throw new InvalidOperationException("Cannot revert tests on a finalized bill.");
 
             if (item.Category != BillItemCategory.LabTest)
@@ -174,7 +174,7 @@ namespace HospitalBilling.Services
             if (item.Category != BillItemCategory.Medication)
                 throw new InvalidOperationException("Only items in the Medication category can be dispensed via pharmacy.");
 
-            if (item.Bill.Status != BillStatus.Open)
+            if (item.Bill.Status != BillStatus.Open && item.Bill.Status != BillStatus.ConsultationDone)
                 throw new InvalidOperationException("Cannot dispense items for a finalized bill.");
 
             // Stock Management
@@ -202,7 +202,7 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(i => i.Id == billItemId)
                 ?? throw new KeyNotFoundException("Nursing order not found.");
 
-            if (item.Bill.Status != BillStatus.Open)
+            if (item.Bill.Status != BillStatus.Open && item.Bill.Status != BillStatus.ConsultationDone)
                 throw new InvalidOperationException("Cannot complete nursing orders for a finalized bill.");
 
             if (item.Category != BillItemCategory.NursingService
@@ -210,10 +210,7 @@ namespace HospitalBilling.Services
                 && item.Category != BillItemCategory.Consumable)
                 throw new InvalidOperationException("Only nursing categories can be completed by nurse workflow.");
 
-            if (item.AddedByStaff.Role != StaffRole.Doctor && 
-                item.AddedByStaff.Role != StaffRole.Admin &&
-                item.AddedByStaff.Role != StaffRole.Receptionist)
-                throw new InvalidOperationException("Only hospital-ordered nursing tasks can be completed.");
+            // Allow nurses to complete tasks, including ones they added themselves (e.g. consumables)
 
             if (quantity <= 0)
                 throw new InvalidOperationException("Quantity must be at least 1.");
@@ -221,6 +218,7 @@ namespace HospitalBilling.Services
             item.Quantity = quantity;
             item.IsCompleted = true;
             item.CompletedAt = DateTime.UtcNow;
+            item.CompletedByStaffId = staffId;
 
             if (!string.IsNullOrWhiteSpace(notes))
             {
@@ -239,8 +237,8 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(b => b.Id == billId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.DoctorCompleted)
-                throw new InvalidOperationException("Only Open or DoctorCompleted bills can be finalized.");
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.ConsultationDone && bill.Status != BillStatus.DoctorCompleted)
+                throw new InvalidOperationException("Only Open, ConsultationDone or DoctorCompleted visits can be finalized.");
 
             var pendingCount = bill.Items.Count(i => !i.IsCompleted && 
                 (i.Category == BillItemCategory.LabTest || 
@@ -266,6 +264,24 @@ namespace HospitalBilling.Services
             bill.FinalizedAt = DateTime.UtcNow;
             bill.FinalizedByStaffId = staffId;
 
+            await _db.SaveChangesAsync();
+
+            return MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
+        }
+        
+        public async Task<BillDto> FinishConsultationAsync(int billId, int staffId)
+        {
+            var bill = await _db.Bills
+                .Include(b => b.Patient)
+                .Include(b => b.Items)
+                .FirstOrDefaultAsync(b => b.Id == billId)
+                ?? throw new KeyNotFoundException("Bill not found.");
+
+            if (bill.Status != BillStatus.Open)
+                throw new InvalidOperationException("Consultation can only be finished for Open visits.");
+
+            bill.Status = BillStatus.ConsultationDone;
+            // No need to set FinalizedByStaffId or FinalizedAt here as that's for the billing office
             await _db.SaveChangesAsync();
 
             return MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
@@ -325,15 +341,21 @@ namespace HospitalBilling.Services
             // DATA ISOLATION LOGIC
             if (staffRole == StaffRole.Doctor)
             {
-                // Doctors see their assigned bills, bills they created, or bills where they added items
+                // Doctors see their assigned bills, bills they created, or bills where they added items/prescriptions
                 var billIdsByItems = await _db.BillItems
                     .Where(i => i.AddedByStaffId == staffId)
                     .Select(i => i.BillId)
                     .Distinct()
                     .ToListAsync();
 
+                var billIdsByPrescriptions = await _db.Prescriptions
+                    .Where(p => p.PrescribedByStaffId == staffId)
+                    .Select(p => p.BillId)
+                    .Distinct()
+                    .ToListAsync();
+
                 query = query.Where(b => 
-                    (billIdsByItems.Contains(b.Id) || b.CreatedByStaffId == staffId || b.AssignedDoctorId == staffId) 
+                    (billIdsByItems.Contains(b.Id) || billIdsByPrescriptions.Contains(b.Id) || b.CreatedByStaffId == staffId || b.AssignedDoctorId == staffId) 
                     && b.Status != BillStatus.Trash);
             }
             else if (staffRole == StaffRole.Nurse)
@@ -534,9 +556,11 @@ namespace HospitalBilling.Services
         
         // --- Prescriptions ---
 
-        public async Task<Prescription> CreatePrescriptionAsync(HospitalBilling.DTOs.CreatePrescriptionDto dto, int staffId)
+        public async Task<PrescriptionDto> CreatePrescriptionAsync(HospitalBilling.DTOs.CreatePrescriptionDto dto, int staffId)
         {
-            var bill = await _db.Bills.FindAsync(dto.BillId) ?? throw new KeyNotFoundException("Bill not found");
+            var bill = await _db.Bills.Include(b => b.Patient).FirstOrDefaultAsync(b => b.Id == dto.BillId) 
+                ?? throw new KeyNotFoundException("Bill not found");
+            
             var prescription = new Prescription
             {
                 BillId = dto.BillId,
@@ -550,31 +574,37 @@ namespace HospitalBilling.Services
             };
             _db.Prescriptions.Add(prescription);
             await _db.SaveChangesAsync();
-            return prescription;
+            
+            return MapToPrescriptionDto(prescription, bill.BillNumber, bill.Patient?.FullName);
         }
 
-        public async Task<List<Prescription>> GetPrescriptionsForBillAsync(int billId)
+        public async Task<List<PrescriptionDto>> GetPrescriptionsForBillAsync(int billId)
         {
-            return await _db.Prescriptions
+            var prescriptions = await _db.Prescriptions
+                .Include(p => p.Bill)
+                .ThenInclude(b => b.Patient)
                 .Include(p => p.PrescribedByStaff)
-                .Include(p => p.DispensedByStaff)
                 .Where(p => p.BillId == billId)
                 .OrderByDescending(p => p.PrescribedAt)
                 .ToListAsync();
+
+            return prescriptions.Select(p => MapToPrescriptionDto(p, p.Bill?.BillNumber, p.Bill?.Patient?.FullName)).ToList();
         }
 
-        public async Task<List<Prescription>> GetPendingPrescriptionsAsync()
+        public async Task<List<PrescriptionDto>> GetPendingPrescriptionsAsync()
         {
-            return await _db.Prescriptions
+            var prescriptions = await _db.Prescriptions
                 .Include(p => p.Bill)
                 .ThenInclude(b => b.Patient)
                 .Include(p => p.PrescribedByStaff)
                 .Where(p => p.Status == 0)
                 .OrderBy(p => p.PrescribedAt)
                 .ToListAsync();
+
+            return prescriptions.Select(p => MapToPrescriptionDto(p, p.Bill?.BillNumber, p.Bill?.Patient?.FullName)).ToList();
         }
 
-        public async Task<BillItem> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto)
+        public async Task<BillItemDto> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto)
         {
             var prescription = await _db.Prescriptions
                 .Include(p => p.Bill)
@@ -587,6 +617,14 @@ namespace HospitalBilling.Services
 
             var category = await _db.ServiceCategories.FindAsync(dto.ServiceCategoryId) 
                 ?? throw new KeyNotFoundException("Service category (drug) not found");
+
+            if (category.StockQuantity.HasValue)
+            {
+                if (category.StockQuantity < dto.Quantity)
+                    throw new InvalidOperationException($"Insufficient stock for {category.Name}. Available: {category.StockQuantity}");
+                
+                category.StockQuantity -= dto.Quantity;
+            }
 
             var billItem = new BillItem
             {
@@ -609,13 +647,13 @@ namespace HospitalBilling.Services
             prescription.Status = 1;
             prescription.DispensedByStaffId = staffId;
             prescription.DispensedAt = DateTime.UtcNow;
-            
-            await _db.SaveChangesAsync();
-
             prescription.BillItemId = billItem.Id;
+
             await _db.SaveChangesAsync();
 
-            return billItem;
+            await _db.Entry(billItem).Reference(i => i.AddedByStaff).LoadAsync();
+
+            return MapItemToDto(billItem);
         }
 
         // --- Helpers ---
@@ -706,7 +744,23 @@ namespace HospitalBilling.Services
             AddedByRole = item.AddedByStaff?.Role.ToString() ?? "Unknown",
             AddedAt = item.AddedAt,
             CompletedAt = item.CompletedAt,
+            CompletedByStaffId = item.CompletedByStaffId,
             Notes = item.Notes
+        };
+
+        private static PrescriptionDto MapToPrescriptionDto(Prescription p, string? billNumber, string? patientName) => new()
+        {
+            Id = p.Id,
+            BillId = p.BillId,
+            BillNumber = billNumber,
+            PatientName = patientName,
+            DrugName = p.DrugName,
+            Dosage = p.Dosage,
+            Frequency = p.Frequency,
+            Duration = p.Duration,
+            Status = p.Status,
+            PrescribedBy = p.PrescribedByStaff?.FullName,
+            PrescribedAt = p.PrescribedAt
         };
         public async Task<PatientReportDto> GetPatientReportAsync(int patientId, DateTime start, DateTime end)
         {
@@ -716,18 +770,24 @@ namespace HospitalBilling.Services
             // Normalize phone number to last 9 digits for robust matching
             var normalizedPhone = patient.PhoneNumber.Length >= 9 ? patient.PhoneNumber.Substring(patient.PhoneNumber.Length - 9) : patient.PhoneNumber;
 
-            // Find all linked patient IDs (same phone suffix or National ID)
+            // Find all linked patient IDs (same phone suffix or National ID if present)
             var linkedPatientIds = await _db.Patients
-                .Where(p => p.PhoneNumber.EndsWith(normalizedPhone) || (p.NationalId != null && p.NationalId == patient.NationalId))
+                .Where(p => p.PhoneNumber.EndsWith(normalizedPhone) || 
+                            (patient.NationalId != null && p.NationalId == patient.NationalId))
                 .Select(p => p.Id)
                 .ToListAsync();
 
+            // Handle date range: Ensure 'end' includes the full last day
+            var adjustedStart = start.Date;
             var adjustedEnd = end.Date.AddDays(1).AddTicks(-1);
 
             var bills = await _db.Bills
                 .Include(b => b.Items)
                 .Include(b => b.Payments)
-                .Where(b => linkedPatientIds.Contains(b.PatientId) && b.CreatedAt >= start.Date && b.CreatedAt <= adjustedEnd)
+                .Where(b => linkedPatientIds.Contains(b.PatientId) && 
+                            b.CreatedAt >= adjustedStart && 
+                            b.CreatedAt <= adjustedEnd &&
+                            b.Status != BillStatus.Trash)
                 .OrderBy(b => b.CreatedAt)
                 .ToListAsync();
 
@@ -753,6 +813,101 @@ namespace HospitalBilling.Services
             };
 
             return report;
+        }
+
+        public async Task<DoctorReportDto> GetDoctorReportAsync(int doctorId, DateTime startDate, DateTime endDate)
+        {
+            try
+            {
+                var doctor = await _db.Staff.FindAsync(doctorId);
+                if (doctor == null)
+                {
+                    throw new KeyNotFoundException($"Doctor with ID {doctorId} not found.");
+                }
+
+                // Get bills assigned to this doctor
+                var bills = await _db.Bills
+                    .Include(b => b.Patient)
+                    .Include(b => b.Items)
+                    .Where(b => b.AssignedDoctorId == doctorId && 
+                               b.CreatedAt >= startDate && 
+                               b.CreatedAt <= endDate)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .ToListAsync();
+
+                // Basic statistics
+                var totalPatients = bills.Select(b => b.PatientId).Distinct().Count();
+                var completedConsultations = bills.Count(b => b.Status == BillStatus.ConsultationDone);
+                var activeConsultations = bills.Count(b => b.Status == BillStatus.Open);
+                var totalRevenue = bills.Sum(b => b.TotalAmount);
+
+                // Daily stats
+                var dailyStats = bills
+                    .GroupBy(b => b.CreatedAt.Date)
+                    .Select(g => new DoctorReportDailyStatsDto
+                    {
+                        Date = g.Key,
+                        PatientsCount = g.Select(b => b.PatientId).Distinct().Count(),
+                        ConsultationsCompleted = g.Count(b => b.Status == BillStatus.ConsultationDone),
+                        Revenue = g.Sum(b => b.TotalAmount)
+                    })
+                    .OrderBy(d => d.Date)
+                    .ToList();
+
+                // Service breakdown - all items in bills assigned to this doctor
+                var allItems = bills.SelectMany(b => b.Items).ToList();
+                var serviceBreakdown = allItems
+                    .GroupBy(i => i.Category)
+                    .Select(g => new DoctorReportServiceCategoryDto
+                    {
+                        Category = g.Key.ToString(),
+                        Count = g.Count(),
+                        Revenue = g.Sum(i => i.GrossAmount)
+                    })
+                    .ToList();
+
+                // Calculate percentages
+                var totalServiceRevenue = serviceBreakdown.Sum(s => s.Revenue);
+                foreach (var service in serviceBreakdown)
+                {
+                    service.Percentage = totalServiceRevenue > 0 ? 
+                        Math.Round((double)(service.Revenue / totalServiceRevenue) * 100, 1) : 0;
+                }
+
+                // Consultation details
+                var consultations = bills.Select(b => new DoctorReportConsultationDto
+                {
+                    BillId = b.Id,
+                    BillNumber = b.BillNumber,
+                    PatientName = b.Patient?.FullName ?? "Unknown",
+                    ConsultationDate = b.CreatedAt,
+                    Status = b.Status.ToString(),
+                    ServicesCount = b.Items.Count,
+                    TotalAmount = b.TotalAmount,
+                    Services = b.Items.Select(i => $"{i.Category}: {i.Description}").ToList(),
+                    Prescriptions = new List<string>() // Simplified - no prescriptions for now
+                }).ToList();
+
+                return new DoctorReportDto
+                {
+                    DoctorName = doctor.FullName,
+                    StartDate = startDate,
+                    EndDate = endDate,
+                    TotalPatients = totalPatients,
+                    TotalConsultations = bills.Count,
+                    CompletedConsultations = completedConsultations,
+                    ActiveConsultations = activeConsultations,
+                    TotalRevenue = totalRevenue,
+                    AverageConsultationValue = bills.Count > 0 ? totalRevenue / bills.Count : 0,
+                    Consultations = consultations,
+                    DailyStats = dailyStats,
+                    ServiceBreakdown = serviceBreakdown
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to generate doctor report: {ex.Message}", ex);
+            }
         }
     }
 }

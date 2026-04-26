@@ -12,5 +12,8 @@ namespace HospitalBilling.Services.Interfaces
 
         // Get payments for a bill
         Task<List<PaymentResponseDto>> GetPaymentsForBillAsync(int billId);
+
+        // Cashier report within optional date-time range
+        Task<CashierReportDto> GetCashierReportAsync(DateTime? startDate, DateTime? endDate);
     }
 }

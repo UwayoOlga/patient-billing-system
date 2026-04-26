@@ -8,6 +8,7 @@ namespace HospitalBilling.Enums
         Disputed,          // Patient has raised a dispute
         Cancelled,
         Trash,
+        ConsultationDone, // Added at the end to preserve integer mapping for existing records
         DoctorCompleted    // Doctor has finished clinical work; awaiting billing finalization
     }
 }

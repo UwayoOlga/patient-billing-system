@@ -53,6 +53,16 @@ namespace HospitalBilling.Controllers
             if (bill == null)
                 return NotFound(new { message = "Bill not found. Check your Bill Number." });
 
+            // ENFORCED SECURITY: If logged in as a patient, you can ONLY view your own bills.
+            if (User.Identity?.IsAuthenticated == true && User.IsInRole("Patient"))
+            {
+                var patientId = GetStaffId();
+                if (bill.PatientId != patientId)
+                {
+                    return Unauthorized(new { message = "Access Denied: This bill does not belong to your account." });
+                }
+            }
+
             return Ok(bill);
         }
 
@@ -195,6 +205,18 @@ namespace HospitalBilling.Controllers
         {
             var staffId = GetStaffId();
             var bill = await _billing.FinalizeBillAsync(billId, staffId);
+            return Ok(bill);
+        }
+        
+        /// <summary>
+        /// Doctor marks consultation as finished.
+        /// </summary>
+        [Authorize(Roles = "Doctor,Admin")]
+        [HttpPatch("{billId}/finish-consultation")]
+        public async Task<IActionResult> FinishConsultation(int billId)
+        {
+            var staffId = GetStaffId();
+            var bill = await _billing.FinishConsultationAsync(billId, staffId);
             return Ok(bill);
         }
 
@@ -401,6 +423,28 @@ namespace HospitalBilling.Controllers
 
             var report = await _billing.GetPatientReportAsync(patientId, startDate, endDate);
             return Ok(report);
+        }
+
+        /// <summary>
+        /// Doctor access: Generate comprehensive report of consultations and activities.
+        /// </summary>
+        [Authorize(Roles = "Doctor")]
+        [HttpGet("doctor-report")]
+        public async Task<IActionResult> GetDoctorReport([FromQuery] DateTime? start, [FromQuery] DateTime? end)
+        {
+            try
+            {
+                var doctorId = GetStaffId();
+                var startDate = start ?? DateTime.UtcNow.AddMonths(-1);
+                var endDate = end ?? DateTime.UtcNow;
+
+                var report = await _billing.GetDoctorReportAsync(doctorId, startDate, endDate);
+                return Ok(report);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message, details = ex.ToString() });
+            }
         }
 
         // --- Helpers ---

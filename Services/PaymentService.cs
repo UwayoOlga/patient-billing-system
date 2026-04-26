@@ -77,6 +77,63 @@ namespace HospitalBilling.Services
             return payments.Select(MapToDto).ToList();
         }
 
+        public async Task<CashierReportDto> GetCashierReportAsync(DateTime? startDate, DateTime? endDate)
+        {
+            if (startDate.HasValue && endDate.HasValue && startDate > endDate)
+                throw new InvalidOperationException("Start date must be earlier than end date.");
+
+            var query = _db.Payments
+                .AsNoTracking()
+                .Where(p => p.IsConfirmed)
+                .Include(p => p.Bill)
+                .ThenInclude(b => b.Patient)
+                .Include(p => p.ConfirmedByStaff)
+                .AsQueryable();
+
+            if (startDate.HasValue)
+                query = query.Where(p => p.PaidAt >= startDate.Value);
+
+            if (endDate.HasValue)
+                query = query.Where(p => p.PaidAt <= endDate.Value);
+
+            var payments = await query
+                .OrderByDescending(p => p.PaidAt)
+                .ToListAsync();
+
+            var totalCollected = payments.Sum(p => p.Amount);
+            var totalTransactions = payments.Count;
+
+            return new CashierReportDto
+            {
+                StartDate = startDate,
+                EndDate = endDate,
+                TotalCollected = totalCollected,
+                TotalTransactions = totalTransactions,
+                AverageTransactionAmount = totalTransactions > 0 ? totalCollected / totalTransactions : 0,
+                PaymentMethodSummary = payments
+                    .GroupBy(p => string.IsNullOrWhiteSpace(p.Method) ? "Unknown" : p.Method.Trim())
+                    .Select(g => new CashierPaymentMethodSummaryDto
+                    {
+                        Method = g.Key,
+                        Count = g.Count(),
+                        Amount = g.Sum(x => x.Amount)
+                    })
+                    .OrderByDescending(x => x.Amount)
+                    .ToList(),
+                Transactions = payments.Select(p => new CashierTransactionDto
+                {
+                    PaymentId = p.Id,
+                    BillNumber = p.Bill.BillNumber,
+                    PatientName = p.Bill.Patient.FullName,
+                    Method = p.Method,
+                    Amount = p.Amount,
+                    PaidAt = p.PaidAt,
+                    Reference = p.Reference,
+                    ConfirmedBy = p.ConfirmedByStaff != null ? p.ConfirmedByStaff.FullName : "System"
+                }).ToList()
+            };
+        }
+
         private static PaymentResponseDto MapToDto(Payment p) => new()
         {
             Id = p.Id,

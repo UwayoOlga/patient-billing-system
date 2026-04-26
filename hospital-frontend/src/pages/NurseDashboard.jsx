@@ -4,6 +4,13 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './NurseDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
+import { 
+  createStandardReportHeader, 
+  createStandardReportFooter, 
+  createStandardTable,
+  generateReportFilename,
+  createStatsSummary
+} from '../utils/reportUtils'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
 import logo from '../assets/logo.jpg'
@@ -30,6 +37,7 @@ export default function NurseDashboard() {
     start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   })
+  const [notification, setNotification] = useState({ message: '', type: 'success' })
   const [reportData, setReportData] = useState(null)
 
   useEffect(() => {
@@ -50,15 +58,14 @@ export default function NurseDashboard() {
 
   function getNursingOrders(bill) {
     return (bill.items || []).filter(i => 
-      NURSING_CATEGORIES.has(i.category) && 
-      (i.addedByRole === 'Doctor' || i.addedByRole === 'Admin')
+      NURSING_CATEGORIES.has(i.category)
     )
   }
 
   const visibleBills = useMemo(() => {
     const q = searchBill.trim().toLowerCase()
     return bills
-      .filter(b => b.status === 'Open')
+      .filter(b => b.status === 'Open' || b.status === 'ConsultationDone')
       .filter(b => getNursingOrders(b).length > 0)
       .filter(b => !q || b.billNumber?.toLowerCase().includes(q))
   }, [bills, searchBill])
@@ -67,14 +74,18 @@ export default function NurseDashboard() {
     const today = new Date().toDateString()
     return bills.flatMap(b => 
       (b.items || [])
-        .filter(i => 
-          NURSING_CATEGORIES.has(i.category) && 
-          i.isCompleted && 
-          i.completedAt &&
-          new Date(i.completedAt).toDateString() === today
-        )
+        .filter(i => {
+          if (!NURSING_CATEGORIES.has(i.category) || !i.isCompleted || !i.completedAt) return false
+          if (user?.id && i.completedByStaffId && i.completedByStaffId !== user.id) return false
+          const dateStr = i.completedAt.endsWith('Z') ? i.completedAt : i.completedAt + 'Z'
+          return new Date(dateStr).toDateString() === today
+        })
         .map(i => ({ ...i, patientName: b.patientName, billNumber: b.billNumber }))
-    ).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    ).sort((a, b) => {
+      const d1 = new Date(b.completedAt.endsWith('Z') ? b.completedAt : b.completedAt + 'Z')
+      const d2 = new Date(a.completedAt.endsWith('Z') ? a.completedAt : a.completedAt + 'Z')
+      return d1 - d2
+    })
   }, [bills])
 
   async function completeOrder(itemId) {
@@ -85,6 +96,7 @@ export default function NurseDashboard() {
     setSavingId(itemId)
     try {
       await api.patch(`/bills/items/${itemId}/nursing-complete`, { quantity, notes })
+      showNotification('Service marked as completed.', 'success')
       await fetchNursingOrders()
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to complete nursing service.')
@@ -102,6 +114,11 @@ export default function NurseDashboard() {
         [field]: value
       }
     }))
+  }
+
+  function showNotification(message, type = 'success') {
+    setNotification({ message, type })
+    setTimeout(() => setNotification({ message: '', type: 'success' }), 4000)
   }
 
   function handleLogout() {
@@ -147,28 +164,62 @@ export default function NurseDashboard() {
   const exportToPDF = () => {
     if (!reportData) return
     const doc = new jsPDF()
+    
+    // Standardized header
+    const dateRange = `${reportRange.start} to ${reportRange.end}`
+    let y = createStandardReportHeader(
+      doc, 
+      'NURSING PERFORMANCE REPORT', 
+      `Nursing Services & Patient Care Analysis - ${user?.name}`,
+      {
+        generatedBy: `Nurse ${user?.name}`,
+        dateRange: dateRange,
+        additionalInfo: `Total Services Completed: ${reportData.services.length}`
+      }
+    )
+
+    // Summary statistics
+    const stats = [
+      { label: 'Total Services Completed', value: reportData.services.length.toString() },
+      { label: 'Patients Served', value: new Set(reportData.services.map(s => s.patientName)).size.toString() },
+      { label: 'Report Period', value: dateRange },
+      { label: 'Generated Date', value: new Date(reportData.generatedAt).toLocaleDateString() }
+    ]
+
+    y = createStatsSummary(doc, stats, y)
+    y += 10
+
+    // Services table
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('NURSING SERVICES COMPLETED', 14, y)
+    y += 10
+
     const tableData = reportData.services.map(s => [
       new Date(s.completedAt).toLocaleDateString(),
       s.patientName,
       s.billNumber,
       s.description,
-      s.notes || ''
+      s.notes || '—'
     ])
 
-    doc.setFontSize(20); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
-    doc.setFontSize(10); doc.setTextColor(100); doc.text('Nursing Performance Report', 14, 28)
-    doc.text(`Generated: ${reportData.generatedAt}`, 14, 34)
-    doc.text(`Period: ${reportRange.start} to ${reportRange.end}`, 14, 40)
+    createStandardTable(
+      doc,
+      ['Date', 'Patient Name', 'Bill #', 'Service Description', 'Clinical Notes'],
+      tableData,
+      y,
+      { headerColor: [14, 165, 233] } // Nursing blue
+    )
 
-    doc.autoTable({
-      startY: 50,
-      head: [['Date', 'Patient Name', 'Bill #', 'Service', 'Notes']],
-      body: tableData,
-      theme: 'striped',
-      headStyles: { fillColor: [14, 165, 233] } // Use Nurse blue
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'This report contains confidential nursing care and patient service data.'
     })
 
-    doc.save(`Nurse_Performance_Report_${reportRange.start}.pdf`)
+    // Save with standardized filename
+    const filename = generateReportFilename('Nursing_Performance', user?.name || 'Nurse', dateRange.replace(' to ', '_to_'))
+    doc.save(filename)
   }
 
   function handlePrintReport() {
@@ -224,6 +275,17 @@ export default function NurseDashboard() {
             </div>
           </div>
         </header>
+
+        {notification.message && (
+          <div style={{
+            position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
+            background: notification.type === 'success' ? '#059669' : '#dc2626',
+            color: 'white', padding: '12px 24px', borderRadius: '12px',
+            zIndex: 10000, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontWeight: 700
+          }}>
+            {notification.message}
+          </div>
+        )}
 
         {tab === 'profile' ? <ProfileTab /> : tab === 'reports' ? (
           <div className={styles.reportView}>

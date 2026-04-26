@@ -5,6 +5,15 @@ import { useNavigate } from 'react-router-dom';
 import styles from './ReceptionistDashboard.module.css';
 import ProfileTab from '../components/ProfileTab';
 import logo from '../assets/logo.jpg';
+import { 
+  createStandardReportHeader, 
+  createStandardReportFooter, 
+  createStandardTable,
+  generateReportFilename,
+  createStatsSummary
+} from '../utils/reportUtils'
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function ReceptionistDashboard() {
   const [user, setUserState] = useState(getUser());
@@ -17,7 +26,7 @@ export default function ReceptionistDashboard() {
   }, []);
 
   const [patients, setPatients] = useState([]);
-  const [tab, setTab] = useState('patients'); // 'patients' | 'profile'
+  const [tab, setTab] = useState('patients'); // 'patients' | 'reports' | 'profile'
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,7 +56,7 @@ export default function ReceptionistDashboard() {
         api.get('/staff')
       ]);
 
-      setPatients(patientsRes.data);
+      setPatients((patientsRes.data || []).sort((a, b) => b.id - a.id));
       setDoctors(staffRes.data.filter(s => s.role === 0 && s.isActive)); // 0 = Doctor in StaffRole enum
 
       const activeByPatient = {};
@@ -163,6 +172,68 @@ export default function ReceptionistDashboard() {
     navigate('/login');
   };
 
+  function downloadPatientReport() {
+    const doc = new jsPDF();
+    const now = new Date();
+    const insuredCount = patients.filter(p => p.insuranceProvider).length;
+    const privateCount = patients.length - insuredCount;
+
+    // Standardized header
+    let y = createStandardReportHeader(
+      doc, 
+      'PATIENT REGISTRATION REPORT', 
+      `Patient Database & Insurance Coverage Analysis - ${user?.name}`,
+      {
+        generatedBy: `Receptionist ${user?.name}`,
+        additionalInfo: `Total Registered Patients: ${patients.length} | Insurance Coverage Analysis`
+      }
+    )
+
+    // Summary statistics
+    const stats = [
+      { label: 'Total Registered Patients', value: patients.length.toString(), highlight: true },
+      { label: 'Insured Patients', value: insuredCount.toString() },
+      { label: 'Private / Uninsured Patients', value: privateCount.toString() },
+      { label: 'Insurance Coverage Rate', value: `${patients.length > 0 ? Math.round((insuredCount / patients.length) * 100) : 0}%` }
+    ]
+
+    y = createStatsSummary(doc, stats, y)
+    y += 10
+
+    // Patient registration table
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('PATIENT REGISTRATION DATABASE', 14, y)
+    y += 10
+
+    const tableData = patients.map(p => [
+      `P${String(p.id).padStart(4, '0')}`,
+      p.fullName,
+      p.phoneNumber,
+      p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString() : 'N/A',
+      p.insuranceProvider || 'Private Pay',
+      p.insuranceProvider ? `${p.insuranceCoveragePercentage}%` : '0%'
+    ])
+
+    createStandardTable(
+      doc,
+      ['Patient ID', 'Full Name', 'Phone Number', 'Date of Birth', 'Insurance Provider', 'Coverage'],
+      tableData,
+      y,
+      { headerColor: [15, 23, 42] } // Reception dark blue
+    )
+
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'This report contains confidential patient registration and insurance information.'
+    })
+
+    // Save with standardized filename
+    const filename = generateReportFilename('Patient_Registration', user?.name || 'Reception', now.toISOString().split('T')[0])
+    doc.save(filename);
+  }
+
   const filteredPatients = patients
     .slice()
     .sort((a, b) => b.id - a.id)  // newest first (highest ID = most recently registered)
@@ -186,6 +257,10 @@ export default function ReceptionistDashboard() {
           <button className={`${styles.navItem} ${tab === 'patients' ? styles.active : ''}`} onClick={() => { setTab('patients'); setMobileMenuOpen(false); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             Patients
+          </button>
+          <button className={`${styles.navItem} ${tab === 'reports' ? styles.active : ''}`} onClick={() => { setTab('reports'); setMobileMenuOpen(false); }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Reports
           </button>
           <button className={`${styles.navItem} ${tab === 'profile' ? styles.active : ''}`} onClick={() => { setTab('profile'); setMobileMenuOpen(false); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -213,7 +288,60 @@ export default function ReceptionistDashboard() {
           </div>
         </header>
 
-        {tab === 'patients' ? (
+        {tab === 'reports' ? (
+          <div style={{ padding: '24px', background: '#fff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>Registration Report</h2>
+                <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '14px' }}>A summary of all registered patients and their insurance status.</p>
+              </div>
+              <button
+                onClick={downloadPatientReport}
+                disabled={patients.length === 0}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 24px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download PDF
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Total Patients</div>
+                <div style={{ fontSize: '28px', fontWeight: 900, color: '#0f172a' }}>{patients.length}</div>
+              </div>
+              <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '12px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Insured</div>
+                <div style={{ fontSize: '28px', fontWeight: 900, color: '#059669' }}>{patients.filter(p => p.insuranceProvider).length}</div>
+              </div>
+              <div style={{ background: '#fef3c7', padding: '20px', borderRadius: '12px', border: '1px solid #fde68a', textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Private Pay</div>
+                <div style={{ fontSize: '28px', fontWeight: 900, color: '#d97706' }}>{patients.filter(p => !p.insuranceProvider).length}</div>
+              </div>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: '#0f172a', color: '#fff' }}>
+                  <th style={{ padding: '12px 16px', textAlign: 'left' }}>ID</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left' }}>Name</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left' }}>Phone</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'left' }}>Insurance</th>
+                  <th style={{ padding: '12px 16px', textAlign: 'right' }}>Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patients.map((p, i) => (
+                  <tr key={p.id} style={{ background: i % 2 === 0 ? '#f8fafc' : '#fff', borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '10px 16px', fontWeight: 700, color: '#64748b' }}>P{String(p.id).padStart(4, '0')}</td>
+                    <td style={{ padding: '10px 16px', fontWeight: 700 }}>{p.fullName}</td>
+                    <td style={{ padding: '10px 16px', color: '#475569' }}>{p.phoneNumber}</td>
+                    <td style={{ padding: '10px 16px' }}>{p.insuranceProvider || <span style={{ color: '#94a3b8' }}>Private Pay</span>}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', color: p.insuranceProvider ? '#059669' : '#94a3b8', fontWeight: 700 }}>{p.insuranceProvider ? `${p.insuranceCoveragePercentage}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : tab === 'patients' ? (
           <>
             <div className={styles.tabToolbar}>
               <div className={styles.searchWrap}>

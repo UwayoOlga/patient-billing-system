@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import {
+  createStandardReportHeader,
+  createStandardReportFooter,
+  createStandardTable,
+  generateReportFilename,
+  createStatsSummary
+} from '../utils/reportUtils'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
 import api from '../utils/api'
@@ -11,7 +18,11 @@ export default function PatientPortal() {
   const [searchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState(searchParams.get('bill') ? 'current' : 'history')
   const [billNumber, setBillNumber] = useState(searchParams.get('bill') || '')
-  const [user, setUserState] = useState(getUser())
+  const [user, setUserState] = useState(() => {
+    const stored = getUser()
+    // Only accept Patient sessions in the Patient Portal; ignore staff sessions
+    return stored?.role === 'Patient' ? stored : null
+  })
   const [authMode, setAuthMode] = useState('login')
   const [authForm, setAuthForm] = useState({ identifier: '', password: '', fullName: '', phoneNumber: '', email: '', dateOfBirth: '', nationalId: '' })
 
@@ -38,8 +49,6 @@ export default function PatientPortal() {
   const [registrationSuccess, setRegistrationSuccess] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
   const [activeDisputeItem, setActiveDisputeItem] = useState(null)
-  const [disputeLoading, setDisputeLoading] = useState(false)
-  const [disputeError, setDisputeError] = useState('')
 
   useEffect(() => {
     if (searchParams.get('bill')) {
@@ -63,31 +72,37 @@ export default function PatientPortal() {
       setPayBankName('')
       setPayAccountName('')
     } catch (err) {
-      setError('No active bill found with that ID.')
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        setError('Security Error: You can only view bills linked to your own account while logged in.')
+      } else {
+        setError('No active bill found with that ID.')
+      }
       setBill(null)
     } finally {
       setLoading(false)
     }
   }
 
-  async function fetchSecureHistory() {
-    setLoading(true)
+  async function fetchSecureHistory(isAutoRefresh = false) {
+    if (!isAutoRefresh) setLoading(true)
     setError('')
     try {
       const { data } = await api.get(`/bills/history`)
       setHistory(data)
 
       // Automatically set the latest Unpaid/Open bill as the "Current" view for patients
-      // only if they haven't manually selected one yet AND they're on the history tab
+      // only if they haven't manually selected one yet
       const activeBill = data.find(b => b.status === 'Open' || b.status === 'Finalized' || b.balanceDue > 0)
-      if (activeBill && !bill && activeTab === 'history') {
+      if (activeBill && !bill) {
         setBill(activeBill)
       }
     } catch (err) {
-      console.error("History Load Error:", err);
-      setError(err.response?.data?.message || 'Could not load history.');
+      if (!isAutoRefresh) {
+        console.error("History Load Error:", err);
+        setError(err.response?.data?.message || 'Could not load history.');
+      }
     } finally {
-      setLoading(false)
+      if (!isAutoRefresh) setLoading(false)
     }
   }
 
@@ -131,42 +146,62 @@ export default function PatientPortal() {
   const exportToPDF = () => {
     if (!report || !report.visits.length) return
     const doc = new jsPDF()
-    
-    doc.setFontSize(22); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
-    doc.setFontSize(10); doc.setTextColor(100); doc.text('Official Patient Medical & Billing Statement', 14, 28)
-    
-    doc.setDrawColor(226, 232, 240); doc.line(14, 35, 196, 35)
 
-    doc.setFontSize(9); doc.setTextColor(100); doc.text('PATIENT NAME', 14, 45); doc.text('REPORT PERIOD', 110, 45)
-    doc.setFontSize(11); doc.setTextColor(15, 23, 42);
-    doc.text(report.patientName, 14, 51)
-    doc.text(`${reportRange.start} to ${reportRange.end}`, 110, 51)
+    // Standardized header
+    const dateRange = `${reportRange.start} to ${reportRange.end}`
+    let y = createStandardReportHeader(
+      doc,
+      'PATIENT MEDICAL & BILLING STATEMENT',
+      `Personal Health Record - ${report.patientName}`,
+      {
+        generatedBy: 'Patient Portal',
+        dateRange: dateRange,
+        additionalInfo: `Total Visits: ${report.visitCount} | Account Summary Report`
+      }
+    )
+
+    // Summary statistics
+    const stats = [
+      { label: 'Total Medical Visits', value: report.visitCount.toString() },
+      { label: 'Total Medical Expenses', value: `RWF ${report.totalSpent.toLocaleString()}` },
+      { label: 'Insurance Coverage Received', value: `RWF ${report.totalInsurance.toLocaleString()}`, highlight: true },
+      { label: 'Personal Out-of-Pocket', value: `RWF ${(report.totalSpent - report.totalInsurance).toLocaleString()}` }
+    ]
+
+    y = createStatsSummary(doc, stats, y)
+    y += 10
+
+    // Visits table
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('DETAILED VISIT HISTORY', 14, y)
+    y += 10
 
     const tableData = report.visits.map(v => [
       new Date(v.date).toLocaleDateString(),
       v.billNumber,
       `RWF ${v.totalAmount.toLocaleString()}`,
+      `RWF ${v.insuranceAmount.toLocaleString()}`,
       `RWF ${v.patientAmount.toLocaleString()}`,
-      `RWF ${v.paidAmount.toLocaleString()}`,
       v.status
     ])
 
-    doc.autoTable({
-      startY: 65,
-      head: [['Date', 'Bill #', 'Total', 'Your Part', 'Paid', 'Status']],
-      body: tableData,
-      theme: 'striped',
-      headStyles: { fillColor: [15, 23, 42] }
+    createStandardTable(
+      doc,
+      ['Visit Date', 'Bill Number', 'Total Charges', 'Insurance Paid', 'Your Portion', 'Status'],
+      tableData,
+      y
+    )
+
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'Keep this statement for your personal health records and insurance purposes.'
     })
 
-    const finalY = doc.lastAutoTable.finalY + 15
-    doc.setFontSize(12); doc.setTextColor(15, 23, 42); doc.text('Financial Summary', 14, finalY)
-    doc.setFontSize(10); doc.setTextColor(71, 85, 105)
-    doc.text(`Total Visits: ${report.visitCount}`, 14, finalY + 10)
-    doc.text(`Total Personal Spending: RWF ${report.totalSpent.toLocaleString()}`, 14, finalY + 16)
-    doc.text(`Total Insurance Coverage: RWF ${report.totalInsurance.toLocaleString()}`, 14, finalY + 22)
-
-    doc.save(`Patient_Report_${reportRange.start}.pdf`)
+    // Save with standardized filename
+    const filename = generateReportFilename('Patient_Statement', report.patientName, dateRange.replace(' to ', '_to_'))
+    doc.save(filename)
   }
 
   function downloadCSV() {
@@ -195,10 +230,20 @@ export default function PatientPortal() {
 
   useEffect(() => {
     if (user?.role === 'Patient') {
-      if (activeTab === 'history') fetchSecureHistory()
+      // Initial fetch
+      if (activeTab === 'history' || (activeTab === 'current' && !bill)) fetchSecureHistory()
       if (activeTab === 'profile') fetchProfile()
       if (activeTab === 'complaints') fetchDisputes()
       if (activeTab === 'reports') fetchReport()
+
+      // Polling for "automatic" visit detection (every 10 seconds)
+      const poll = setInterval(() => {
+        if (activeTab === 'history' || activeTab === 'current') {
+          fetchSecureHistory(true)
+        }
+      }, 10000)
+
+      return () => clearInterval(poll)
     }
   }, [activeTab, user])
 
@@ -254,17 +299,14 @@ export default function PatientPortal() {
     setIsPaying(true)
     setError('')
     try {
-      const ref = payMethod === 'momo'
-        ? `MOMO-${payPhone}-${Math.random().toString(36).substring(2,7).toUpperCase()}`
-        : `BANK-${payBankName.replace(/\s/g,'-').toUpperCase()}-${Math.random().toString(36).substring(2,7).toUpperCase()}`
       await api.post('/payment/patient-pay', {
         billId: bill.id,
         amount: bill.balanceDue,
-        method: payMethod === 'momo' ? 'Mobile Money' : 'Bank Transfer',
-        reference: ref
-      })
-      setPayStep('success')
-      await fetchBill(bill.billNumber)
+        method: payMethod,
+        reference: payMethod === 'momo' ? 'MOMO-' + Math.random().toString(36).substring(7).toUpperCase() : 'BANK-' + Math.random().toString(36).substring(7).toUpperCase()
+      });
+      // Refresh bill
+      await fetchBill(bill.billNumber);
     } catch (err) {
       console.error('Payment Error:', err)
       setError(err.response?.data?.message || 'Payment failed. Please try again.')
@@ -273,69 +315,9 @@ export default function PatientPortal() {
     }
   }
 
+
   function handlePrintReceipt() {
-    if (!bill) return
-    const doc = new jsPDF()
-
-    // Header
-    doc.setFontSize(22); doc.setTextColor(15, 23, 42)
-    doc.text('HOSPITALBILLING', 14, 22)
-    doc.setFontSize(10); doc.setTextColor(100)
-    doc.text('Official Payment Receipt', 14, 28)
-    doc.setDrawColor(226, 232, 240); doc.line(14, 33, 196, 33)
-
-    // Patient & bill info
-    doc.setFontSize(9); doc.setTextColor(100)
-    doc.text('RECEIPT TO', 14, 43); doc.text('BILL NUMBER', 110, 43)
-    doc.setFontSize(11); doc.setTextColor(15, 23, 42)
-    doc.text(bill.patientName || '', 14, 49)
-    doc.text(bill.billNumber || '', 110, 49)
-
-    doc.setFontSize(9); doc.setTextColor(100)
-    doc.text('RECEIPT DATE', 14, 59); doc.text('STATUS', 110, 59)
-    doc.setFontSize(11); doc.setTextColor(15, 23, 42)
-    doc.text(new Date().toLocaleDateString(), 14, 65)
-    doc.text(bill.status || '', 110, 65)
-
-    // Items table
-    const completedItems = bill.items?.filter(i => i.isCompleted && !i.isDisputed) || []
-    doc.autoTable({
-      startY: 75,
-      head: [['Description', 'Qty', 'Unit Price', 'Subtotal']],
-      body: completedItems.map(i => [
-        i.description,
-        i.quantity,
-        `RWF ${i.unitPrice?.toLocaleString()}`,
-        `RWF ${i.subtotal?.toLocaleString()}`
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] }
-    })
-
-    const finalY = (doc.lastAutoTable?.finalY || 75) + 10
-
-    // Summary
-    doc.autoTable({
-      startY: finalY,
-      body: [
-        ['Total Charges', `RWF ${bill.totalAmount?.toLocaleString()}`],
-        ['Insurance Coverage', `- RWF ${bill.totalInsurance?.toLocaleString()}`],
-        ['Patient Liability', `RWF ${bill.patientLiability?.toLocaleString()}`],
-        ['Total Paid', `RWF ${bill.totalPaid?.toLocaleString()}`],
-        ['Balance Due', `RWF ${bill.balanceDue?.toLocaleString()}`],
-      ],
-      theme: 'plain',
-      columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right' } },
-      styles: { fontSize: 11 }
-    })
-
-    // Footer
-    const footerY = (doc.lastAutoTable?.finalY || finalY) + 20
-    doc.setFontSize(9); doc.setTextColor(150)
-    doc.text('This is a computer-generated receipt. No signature required.', 14, footerY)
-    doc.text('RWANDA DIGITAL MEDICAL CENTER', 14, footerY + 6)
-
-    doc.save(`Receipt_${bill.billNumber}.pdf`)
+    window.print();
   }
 
   async function handleUpdateProfile(e) {
@@ -395,7 +377,7 @@ export default function PatientPortal() {
           <img src={logo} alt="Logo" className={styles.logoImage} />
           <span className={styles.brandText}>HOSPITALBILLING</span>
         </div>
-        
+
         <div className={styles.navLinks}>
           {navItems.map(item => (
             <button
@@ -455,10 +437,10 @@ export default function PatientPortal() {
               <h2>Hospital Invoice</h2>
               {user ? (
                 <div style={{ marginBottom: '24px' }}>
-                  <p>You don't have any active bills at the moment.</p>
+                  <p>Search for one of your visit IDs below to view detailed charges.</p>
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', fontSize: '13px', color: '#64748b', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#0ea5e9' }}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-                    <span>Any new visit created at the reception will automatically appear here.</span>
+                    <span>While logged in, you can only search for bills belonging to you. Use "Visit History" to see all your records.</span>
                   </div>
                 </div>
               ) : (
@@ -493,6 +475,17 @@ export default function PatientPortal() {
                   <button onClick={() => { setBill(null); setActiveTab('history'); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: 800 }}>BACK TO HISTORY</button>
                 </div>
               )}
+
+              {disputes?.some(d => d.billNumber === bill.billNumber && d.status === 'Rejected') && (
+                <div style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '16px 24px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e11d48" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ margin: '0 0 4px', color: '#be123c', fontSize: '14px', fontWeight: 800 }}>Dispute Rejected</h4>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#e11d48' }}>One or more of your billing disputes were reviewed and rejected by the administration. The charges have been reinstated to your payable balance. See <strong>Billing Complaints</strong> for details.</p>
+                  </div>
+                </div>
+              )}
+
               <div className={styles.billHeader}>
                 <div className={styles.billInfo}>
                   <span>Patient Invoice</span>
@@ -571,265 +564,163 @@ export default function PatientPortal() {
                   </div>
                 </div>
 
+                {/* Payment History Section */}
+                {bill.payments && bill.payments.length > 0 && (
+                  <>
+                    <h3 className={styles.sectionTitle}>Payment History</h3>
+                    <div className={styles.paymentHistory}>
+                      {bill.payments.map(payment => (
+                        <div key={payment.id} className={styles.paymentRow}>
+                          <div className={styles.paymentInfo}>
+                            <div className={styles.paymentMethod}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                                <line x1="1" y1="10" x2="23" y2="10" />
+                              </svg>
+                              {payment.method.toUpperCase()}
+                            </div>
+                            <div className={styles.paymentDetails}>
+                              <span className={styles.paymentRef}>Ref: {payment.reference}</span>
+                              <span className={styles.paymentDate}>
+                                {payment.paidAt ? new Date(payment.paidAt).toLocaleDateString() : 'Pending'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={styles.paymentAmount}>
+                            RWF {payment.amount.toLocaleString()}
+                          </div>
+                          <div className={styles.paymentStatus}>
+                            {payment.isConfirmed ? (
+                              <span className={styles.confirmed}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                                Confirmed
+                              </span>
+                            ) : (
+                              <span className={styles.pending}>Pending</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
                 {/* Payment / Receipt Section */}
                 <div className={`${styles.paySection} no-print`}>
                   {bill.balanceDue > 0 ? (
                     <div className={styles.payPrompt}>
-
-                      {/* Step indicator */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-                        {['method', 'details', 'confirm'].map((s, i) => (
-                          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{
-                              width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: '12px', fontWeight: 800,
-                              background: ['method','details','confirm'].indexOf(payStep) >= i ? '#0ea5e9' : '#e2e8f0',
-                              color: ['method','details','confirm'].indexOf(payStep) >= i ? '#fff' : '#94a3b8'
-                            }}>{i + 1}</div>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: payStep === s ? '#0ea5e9' : '#94a3b8' }}>
-                              {s === 'method' ? 'Method' : s === 'details' ? 'Details' : 'Confirm'}
-                            </span>
-                            {i < 2 && <div style={{ width: '24px', height: '2px', background: '#e2e8f0' }} />}
-                          </div>
-                        ))}
+                      <h3>Complete Your Payment</h3>
+                      <p>Choose your preferred payment method to clear the balance.</p>
+                      <div className={styles.methodGrid}>
+                        <button
+                          className={`${styles.methodBtn} ${payMethod === 'momo' ? styles.activeMethod : ''}`}
+                          onClick={() => setPayMethod('momo')}
+                        >
+                          Mobile Money
+                        </button>
+                        <button
+                          className={`${styles.methodBtn} ${payMethod === 'bank' ? styles.activeMethod : ''}`}
+                          onClick={() => setPayMethod('bank')}
+                        >
+                          Bank Transfer
+                        </button>
                       </div>
-
-                      {/* Step 1 — Choose method */}
-                      {payStep === 'method' && (
-                        <>
-                          <h3 style={{ marginBottom: '8px' }}>How would you like to pay?</h3>
-                          <p style={{ color: '#64748b', marginBottom: '20px', fontSize: '14px' }}>
-                            Balance due: <strong style={{ color: '#0f172a' }}>RWF {bill.balanceDue.toLocaleString()}</strong>
-                          </p>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
-                            <button
-                              onClick={() => { setPayMethod('momo'); setPayStep('details') }}
-                              style={{
-                                padding: '20px', borderRadius: '16px', border: '2px solid #e2e8f0',
-                                background: '#fff', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.borderColor = '#0ea5e9'}
-                              onMouseLeave={e => e.currentTarget.style.borderColor = '#e2e8f0'}
-                            >
-                              <div style={{ fontSize: '28px', marginBottom: '8px' }}>📱</div>
-                              <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a' }}>Mobile Money</div>
-                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>MTN MoMo / Airtel Money</div>
-                            </button>
-                            <button
-                              onClick={() => { setPayMethod('bank'); setPayStep('details') }}
-                              style={{
-                                padding: '20px', borderRadius: '16px', border: '2px solid #e2e8f0',
-                                background: '#fff', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.borderColor = '#0ea5e9'}
-                              onMouseLeave={e => e.currentTarget.style.borderColor = '#e2e8f0'}
-                            >
-                              <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏦</div>
-                              <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a' }}>Bank Transfer</div>
-                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Direct bank / card payment</div>
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Step 2 — Enter details */}
-                      {payStep === 'details' && (
-                        <>
-                          <h3 style={{ marginBottom: '4px' }}>
-                            {payMethod === 'momo' ? '📱 Mobile Money Payment' : '🏦 Bank Transfer Payment'}
-                          </h3>
-                          <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                            Amount: <strong style={{ color: '#0f172a' }}>RWF {bill.balanceDue.toLocaleString()}</strong>
-                          </p>
-
-                          {payMethod === 'momo' ? (
-                            <>
-                              {/* MoMo instructions */}
-                              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-                                <div style={{ fontWeight: 700, fontSize: '13px', color: '#c2410c', marginBottom: '8px' }}>📋 How to pay via MoMo:</div>
-                                <ol style={{ fontSize: '13px', color: '#7c3aed', paddingLeft: '18px', lineHeight: '1.8', margin: 0 }}>
-                                  <li>Dial <strong>*182*8*1#</strong> on your phone</li>
-                                  <li>Enter merchant code: <strong>123456</strong></li>
-                                  <li>Enter amount: <strong>RWF {bill.balanceDue.toLocaleString()}</strong></li>
-                                  <li>Enter your PIN to confirm</li>
-                                  <li>Copy the transaction ID below</li>
-                                </ol>
-                              </div>
-                              <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
-                                  Your MoMo Phone Number *
-                                </label>
-                                <input
-                                  type="tel"
-                                  placeholder="e.g. 0788123456"
-                                  value={payPhone}
-                                  onChange={e => setPayPhone(e.target.value)}
-                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px' }}
-                                />
-                              </div>
-                              <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
-                                  Transaction ID (from MoMo SMS) *
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. TXN123456789"
-                                  value={payReference}
-                                  onChange={e => setPayReference(e.target.value)}
-                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontFamily: 'monospace' }}
-                                />
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              {/* Bank instructions */}
-                              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-                                <div style={{ fontWeight: 700, fontSize: '13px', color: '#1e40af', marginBottom: '8px' }}>🏦 Bank Transfer Details:</div>
-                                <div style={{ fontSize: '13px', color: '#1e3a8a', lineHeight: '1.8' }}>
-                                  <div>Bank: <strong>Bank of Kigali</strong></div>
-                                  <div>Account Name: <strong>Rwanda Digital Medical Center</strong></div>
-                                  <div>Account Number: <strong>00040-0123456-78</strong></div>
-                                  <div>Reference: <strong>{bill.billNumber}</strong></div>
-                                </div>
-                              </div>
-                              <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
-                                  Your Bank Name *
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. Bank of Kigali"
-                                  value={payBankName}
-                                  onChange={e => setPayBankName(e.target.value)}
-                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px' }}
-                                />
-                              </div>
-                              <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
-                                  Account Holder Name *
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="Name on your bank account"
-                                  value={payAccountName}
-                                  onChange={e => setPayAccountName(e.target.value)}
-                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px' }}
-                                />
-                              </div>
-                              <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '6px', color: '#0f172a' }}>
-                                  Bank Transaction Reference *
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. REF-20240423-001"
-                                  value={payReference}
-                                  onChange={e => setPayReference(e.target.value)}
-                                  style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontFamily: 'monospace' }}
-                                />
-                              </div>
-                            </>
-                          )}
-
-                          {error && <div className={styles.error} style={{ marginBottom: '12px' }}>{error}</div>}
-
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => { setPayStep('method'); setError('') }}
-                              style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
-                              ← Back
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (payMethod === 'momo' && (!payPhone.trim() || !payReference.trim())) {
-                                  setError('Please enter your phone number and transaction ID.')
-                                  return
-                                }
-                                if (payMethod === 'bank' && (!payBankName.trim() || !payAccountName.trim() || !payReference.trim())) {
-                                  setError('Please fill in all bank details.')
-                                  return
-                                }
-                                setError('')
-                                setPayStep('confirm')
-                              }}
-                              style={{ flex: 2, padding: '12px', borderRadius: '10px', border: 'none', background: '#0ea5e9', color: '#fff', fontWeight: 800, cursor: 'pointer', fontSize: '14px' }}>
-                              Review & Confirm →
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Step 3 — Confirm */}
-                      {payStep === 'confirm' && (
-                        <>
-                          <h3 style={{ marginBottom: '16px' }}>Confirm Your Payment</h3>
-                          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
-                            <div style={{ display: 'grid', gap: '12px' }}>
-                              {[
-                                ['Method', payMethod === 'momo' ? '📱 Mobile Money' : '🏦 Bank Transfer'],
-                                ['Amount', `RWF ${bill.balanceDue.toLocaleString()}`],
-                                payMethod === 'momo'
-                                  ? ['Phone', payPhone]
-                                  : ['Bank', payBankName],
-                                payMethod === 'momo'
-                                  ? ['Transaction ID', payReference]
-                                  : ['Account Name', payAccountName],
-                                payMethod === 'bank' ? ['Reference', payReference] : null,
-                                ['Bill Number', bill.billNumber],
-                              ].filter(Boolean).map(([label, val]) => (
-                                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                                  <span style={{ color: '#64748b', fontWeight: 600 }}>{label}</span>
-                                  <span style={{ fontWeight: 700, color: '#0f172a', fontFamily: label.includes('ID') || label.includes('Reference') || label.includes('Bill') ? 'monospace' : 'inherit' }}>{val}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {error && <div className={styles.error} style={{ marginBottom: '12px' }}>{error}</div>}
-
-                          <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => { setPayStep('details'); setError('') }}
-                              style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
-                              ← Edit
-                            </button>
-                            <button
-                              className={styles.payBtn}
-                              onClick={handlePay}
-                              disabled={isPaying}
-                              style={{ flex: 2, padding: '12px' }}
-                            >
-                              {isPaying ? 'Processing...' : `✓ Confirm Payment — RWF ${bill.balanceDue.toLocaleString()}`}
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Step 4 — Success */}
-                      {payStep === 'success' && (
-                        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                          <div style={{ fontSize: '56px', marginBottom: '12px' }}>✅</div>
-                          <h3 style={{ color: '#059669', marginBottom: '8px' }}>Payment Submitted!</h3>
-                          <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
-                            Your payment has been recorded. The billing team will confirm it shortly.
-                          </p>
-                          <button className={styles.printReceiptBtn} onClick={handlePrintReceipt}>
-                            Download Receipt PDF
-                          </button>
-                        </div>
-                      )}
-
+                      <button
+                        className={styles.payBtn}
+                        onClick={handlePay}
+                        disabled={isPaying}
+                      >
+                        {isPaying ? 'Processing...' : `Pay RWF ${bill.balanceDue.toLocaleString()} Now`}
+                      </button>
                     </div>
                   ) : (
                     <div className={styles.paidSuccess}>
-                      <div className={styles.successIcon}>✓</div>
-                      <h3>Bill Fully Paid</h3>
-                      <p>Thank you for choosing RWANDA DIGITAL MEDICAL CENTER.</p>
+                      <div className={styles.successIcon}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </div>
+                      <h3>Payment Complete</h3>
+                      <p>Thank you for your payment. Your account has been settled.</p>
                       <button className={styles.printReceiptBtn} onClick={handlePrintReceipt}>
-                        Download/Print Official Receipt
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14,2 14,8 20,8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                        </svg>
+                        Download Official Receipt
                       </button>
                     </div>
                   )}
                 </div>
 
+                {/* Printable Receipt Footer (Hidden in UI) */}
+                <div className="print-only" style={{ display: 'none', marginTop: '40px', borderTop: '2px solid #0f172a', paddingTop: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+                    <div style={{ background: '#0f172a', color: '#fff', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800 }}>H</div>
+                    <div style={{ textAlign: 'left' }}>
+                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>RWANDA DIGITAL MEDICAL CENTER</h2>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#64748b', textTransform: 'uppercase' }}>Official Payment Receipt</p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
+                    <div>
+                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b' }}>Receipt To:</label>
+                      <div style={{ fontWeight: 700 }}>{bill.patientName}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <label style={{ fontSize: '10px', textTransform: 'uppercase', color: '#64748b' }}>Receipt Date:</label>
+                      <div style={{ fontWeight: 700 }}>{new Date().toLocaleDateString()}</div>
+                    </div>
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '32px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                        <th style={{ padding: '12px 0' }}>Description</th>
+                        <th style={{ padding: '12px 0', textAlign: 'right' }}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bill.items.filter(i => i.isCompleted && !i.isDisputed).map(item => (
+                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 0' }}>
+                            <div style={{ fontWeight: 600 }}>{item.description}</div>
+                            <div style={{ fontSize: '10px', color: '#64748b' }}>Qty: {item.quantity} × RWF {item.unitPrice.toLocaleString()}</div>
+                          </td>
+                          <td style={{ padding: '8px 0', textAlign: 'right' }}>RWF {item.subtotal.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ borderTop: '2px solid #e2e8f0', fontWeight: 700 }}>
+                        <td style={{ padding: '12px 0' }}>Total Charges</td>
+                        <td style={{ padding: '12px 0', textAlign: 'right' }}>RWF {bill.totalAmount.toLocaleString()}</td>
+                      </tr>
+                      <tr style={{ color: '#059669' }}>
+                        <td style={{ padding: '4px 0' }}>Insurance Coverage ({bill.items[0]?.coveragePercentage || 0}%)</td>
+                        <td style={{ padding: '4px 0', textAlign: 'right' }}>- RWF {bill.totalInsurance.toLocaleString()}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '2px solid #0f172a', fontWeight: 700 }}>
+                        <td style={{ padding: '4px 0 12px' }}>Net Patient Liability</td>
+                        <td style={{ padding: '4px 0 12px', textAlign: 'right' }}>RWF {bill.patientLiability.toLocaleString()}</td>
+                      </tr>
+                      {bill.payments.map(p => (
+                        <tr key={p.id} style={{ fontSize: '12px', color: '#475569' }}>
+                          <td style={{ padding: '8px 0' }}>Payment: {p.method.toUpperCase()} (Ref: {p.reference})</td>
+                          <td style={{ padding: '8px 0', textAlign: 'right', color: '#059669' }}>- RWF {p.amount.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ fontWeight: 800, fontSize: '18px', borderTop: '1px solid #0f172a' }}>
+                        <td style={{ padding: '12px 0' }}>Balance Remaining</td>
+                        <td style={{ padding: '12px 0', textAlign: 'right' }}>RWF {bill.balanceDue.toLocaleString()}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div style={{ textAlign: 'center', fontSize: '12px', color: '#94a3b8', marginTop: '40px' }}>
+                    This is a computer-generated receipt. No signature is required.
+                  </div>
+                </div>
               </div>
 
 
@@ -842,8 +733,8 @@ export default function PatientPortal() {
                 <h2>Patient Account</h2>
                 <p>{authMode === 'login' ? 'Login to view your history' : 'Register for an account to track all your hospital visits and bills.'}</p>
                 {!user && authMode === 'login' && (
-                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', color: '#1e40af' }}>
-                    💡 <strong>Don't have an account?</strong> Register now to see your full billing history and manage your visits securely.
+                  <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '6px', marginBottom: '16px', fontSize: '13px', color: '#475569' }}>
+                    <strong>New Patient?</strong> Register for an account to access your complete medical billing history and manage your healthcare records securely.
                   </div>
                 )}
                 <div className={styles.tabContainer} style={{ marginBottom: '16px' }}>
@@ -852,20 +743,20 @@ export default function PatientPortal() {
                 </div>
                 <form onSubmit={handleAuth} className={styles.form}>
                   {registrationSuccess && (
-                    <div style={{ 
-                      background: '#f0fdf4', 
-                      border: '1px solid #bbf7d0', 
-                      color: '#15803d', 
-                      padding: '12px', 
-                      borderRadius: '12px', 
-                      marginBottom: '16px', 
-                      fontSize: '13px', 
+                    <div style={{
+                      background: '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                      color: '#15803d',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      marginBottom: '16px',
+                      fontSize: '13px',
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px'
                     }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                       Account created! Please login to continue.
                     </div>
                   )}
@@ -979,7 +870,6 @@ export default function PatientPortal() {
                     <div
                       key={item.id}
                       className={styles.historyCard}
-                      onClick={() => { setBill(item); setActiveTab('current'); }}
                     >
                       <div className={styles.hCardDate}>
                         {new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -991,8 +881,34 @@ export default function PatientPortal() {
                       <div className={styles.hCardPrice}>
                         RWF {item.balanceDue.toLocaleString()}
                       </div>
-                      <div className={styles.hCardArrow}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                      <div className={styles.hCardActions}>
+                        <button
+                          className={styles.viewBtn}
+                          onClick={() => { setBill(item); setActiveTab('current'); }}
+                          title="View Details"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </button>
+                        {item.totalPaid > 0 && (
+                          <button
+                            className={styles.receiptBtn}
+                            onClick={() => {
+                              setBill(item);
+                              setTimeout(() => handlePrintReceipt(), 100);
+                            }}
+                            title="Download Receipt"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                              <polyline points="14,2 14,8 20,8" />
+                              <line x1="16" y1="13" x2="8" y2="13" />
+                              <line x1="16" y1="17" x2="8" y2="17" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

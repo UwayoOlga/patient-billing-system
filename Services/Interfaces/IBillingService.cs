@@ -31,6 +31,9 @@ namespace HospitalBilling.Services.Interfaces
 
         // Billing staff finalizes the bill
         Task<BillDto> FinalizeBillAsync(int billId, int staffId);
+        
+        // Doctor marks consultation as finished
+        Task<BillDto> FinishConsultationAsync(int billId, int staffId);
 
         // Get full bill by ID (staff use)
         Task<BillDto?> GetBillByIdAsync(int billId);
@@ -61,10 +64,13 @@ namespace HospitalBilling.Services.Interfaces
         Task<List<Dispute>> GetAllDisputesAsync();
         Task UpdateAssignedDoctorAsync(int billId, int? doctorId);
         // Prescriptions
-        Task<Prescription> CreatePrescriptionAsync(HospitalBilling.DTOs.CreatePrescriptionDto dto, int staffId);
-        Task<List<Prescription>> GetPrescriptionsForBillAsync(int billId);
-        Task<List<Prescription>> GetPendingPrescriptionsAsync();
-        Task<BillItem> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto);
+        Task<PrescriptionDto> CreatePrescriptionAsync(HospitalBilling.DTOs.CreatePrescriptionDto dto, int staffId);
+        Task<List<PrescriptionDto>> GetPrescriptionsForBillAsync(int billId);
+        Task<List<PrescriptionDto>> GetPendingPrescriptionsAsync();
+        Task<BillItemDto> DispensePrescriptionAsync(int prescriptionId, int staffId, HospitalBilling.DTOs.DispensePrescriptionDto dto);
         Task<PatientReportDto> GetPatientReportAsync(int patientId, DateTime start, DateTime end);
+        
+        // Doctor reports
+        Task<DoctorReportDto> GetDoctorReportAsync(int doctorId, DateTime startDate, DateTime endDate);
     }
 }

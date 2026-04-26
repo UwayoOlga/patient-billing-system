@@ -1,7 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
+import { 
+  createStandardReportHeader, 
+  createStandardReportFooter, 
+  createStandardTable,
+  generateReportFilename
+} from '../../utils/reportUtils'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import api from '../../utils/api'
 import logo from '../../assets/logo.jpg'
 import styles from './VisitDetailsModal.module.css'
@@ -76,97 +82,142 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
   }
 
   const exportToPDF = () => {
-    try {
-      const doc = new jsPDF()
-      
-      // Header
-      doc.setFontSize(22)
+    const doc = new jsPDF()
+    
+    // Standardized header
+    let y = createStandardReportHeader(
+      doc, 
+      'CLINICAL VISIT SUMMARY', 
+      `Medical Record & Treatment Summary - ${billData.patientName}`,
+      {
+        generatedBy: `Dr. ${billData.assignedDoctorName || 'Medical Staff'}`,
+        additionalInfo: `Visit Number: ${billData.billNumber} | Patient ID: P${String(billData.patientId ?? billData.id).padStart(4, '0')}`
+      }
+    )
+
+    // Patient Information
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('PATIENT & VISIT INFORMATION', 14, y)
+    y += 10
+
+    const patientInfo = [
+      { label: 'Visit Date', value: new Date(billData.createdAt).toLocaleDateString() },
+      { label: 'Attending Doctor', value: `Dr. ${billData.assignedDoctorName || 'TBD'}` },
+      { label: 'Visit Status', value: billData.status },
+      { label: 'Total Services', value: `${billData.items?.length || 0} services recorded` }
+    ]
+
+    patientInfo.forEach(info => {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(100, 116, 139)
+      doc.text(info.label + ':', 14, y)
+      doc.setFont('helvetica', 'bold')
       doc.setTextColor(15, 23, 42)
-      doc.text('HOSPITALBILLING', 14, 22)
-      doc.setFontSize(10)
-      doc.setTextColor(100)
-      doc.text('Clinical Visit Summary & Medical Record', 14, 28)
-      doc.setDrawColor(226, 232, 240)
-      doc.line(14, 35, 196, 35)
+      doc.text(info.value, 70, y)
+      y += 6
+    })
+    y += 8
 
-      // Patient Info
-      doc.setFontSize(9); doc.setTextColor(100)
-      doc.text('PATIENT', 14, 45)
-      doc.text('VISIT NO.', 110, 45)
-      doc.setFontSize(11); doc.setTextColor(15, 23, 42)
-      doc.text(billData.patientName || '', 14, 51)
-      doc.text(billData.billNumber || '', 110, 51)
+    // Clinical Findings & Procedures
+    if (otherItems.length > 0) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.setTextColor(15, 23, 42)
+      doc.text('CLINICAL FINDINGS & PROCEDURES', 14, y)
+      y += 10
 
-      doc.setFontSize(9); doc.setTextColor(100)
-      doc.text('DATE', 14, 62)
-      doc.text('ATTENDING DOCTOR', 110, 62)
-      doc.setFontSize(11); doc.setTextColor(15, 23, 42)
-      doc.text(new Date(billData.createdAt).toLocaleDateString(), 14, 68)
-      doc.text(`Dr. ${billData.assignedDoctorName || 'TBD'}`, 110, 68)
-
-      // Clinical Findings
-      doc.setFontSize(12); doc.setTextColor(15, 23, 42)
-      doc.text('Clinical Findings & Procedures', 14, 85)
-
-      const itemsTable = otherItems.map(i => [
-        i.category || '',
-        i.description || '',
+      const clinicalData = otherItems.map(i => [
+        i.category,
+        i.description,
         i.notes || '—'
       ])
+      
+      y = createStandardTable(
+        doc,
+        ['Category', 'Description', 'Clinical Notes'],
+        clinicalData,
+        y
+      )
+      y += 10
+    }
 
-      if (itemsTable.length > 0) {
-        doc.autoTable({
-          startY: 90,
-          head: [['Category', 'Description', 'Notes']],
-          body: itemsTable,
-          theme: 'grid',
-          headStyles: { fillColor: [15, 23, 42] }
-        })
-      } else {
-        doc.setFontSize(10); doc.setTextColor(150)
-        doc.text('No clinical findings recorded.', 14, 95)
-      }
+    // Laboratory Investigations
+    if (labTests.length > 0) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.setTextColor(15, 23, 42)
+      doc.text('LABORATORY INVESTIGATIONS', 14, y)
+      y += 10
 
-      // Prescriptions
-      let finalY = (doc.lastAutoTable?.finalY || 95) + 15
-      doc.setFontSize(12); doc.setTextColor(15, 23, 42)
-      doc.text('Prescriptions', 14, finalY)
-
-      const rxTable = prescriptions.map(rx => [
-        rx.drugName || '',
-        rx.dosage || '',
-        rx.frequency || '',
-        rx.duration || ''
+      const labData = labTests.map(test => [
+        test.description,
+        test.isCompleted ? 'Completed' : 'Pending',
+        test.notes || '—'
       ])
 
-      if (rxTable.length > 0) {
-        doc.autoTable({
-          startY: finalY + 5,
-          head: [['Drug', 'Dosage', 'Frequency', 'Duration']],
-          body: rxTable,
-          theme: 'striped',
-          headStyles: { fillColor: [5, 150, 105] }
-        })
-        finalY = doc.lastAutoTable.finalY + 20
-      } else {
-        doc.setFontSize(10); doc.setTextColor(150)
-        doc.text('No prescriptions recorded.', 14, finalY + 8)
-        finalY = finalY + 25
-      }
-
-      // Signature
-      if (signatureUrl) {
-        doc.addImage(signatureUrl, 'PNG', 140, finalY, 40, 20)
-        doc.line(140, finalY + 22, 180, finalY + 22)
-        doc.setFontSize(8); doc.setTextColor(100)
-        doc.text('Physician Signature', 140, finalY + 26)
-      }
-
-      doc.save(`Visit_Summary_${billData.billNumber}.pdf`)
-    } catch (err) {
-      console.error('PDF generation failed:', err)
-      alert('PDF download failed. Please try again.')
+      y = createStandardTable(
+        doc,
+        ['Test Description', 'Status', 'Results/Notes'],
+        labData,
+        y,
+        { headerColor: [5, 150, 105] }
+      )
+      y += 10
     }
+
+    // Prescriptions
+    if (prescriptions.length > 0) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.setTextColor(15, 23, 42)
+      doc.text('PRESCRIPTIONS & TREATMENT PLAN', 14, y)
+      y += 10
+
+      const rxData = prescriptions.map(rx => [
+        rx.drugName,
+        rx.dosage,
+        rx.frequency,
+        rx.duration,
+        rx.status === 0 ? 'Pending' : 'Dispensed'
+      ])
+
+      y = createStandardTable(
+        doc,
+        ['Medication', 'Dosage', 'Frequency', 'Duration', 'Status'],
+        rxData,
+        y,
+        { headerColor: [124, 58, 237] }
+      )
+    }
+
+    // Digital Signature Section
+    if (signatureUrl) {
+      // Add signature to PDF
+      try {
+        doc.addImage(signatureUrl, 'PNG', 140, y + 10, 40, 20)
+        doc.setDrawColor(15, 23, 42)
+        doc.line(140, y + 32, 180, y + 32)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(100, 116, 139)
+        doc.text('Physician Digital Signature', 140, y + 36)
+        doc.text(new Date().toLocaleDateString(), 140, y + 40)
+      } catch (e) {
+        console.warn('Could not add signature to PDF:', e)
+      }
+    }
+
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'This is an official medical record. Maintain confidentiality as per medical ethics.'
+    })
+
+    // Save with standardized filename
+    const filename = generateReportFilename('Visit_Summary', billData.patientName, billData.billNumber)
+    doc.save(filename)
   }
 
   function handlePrint() {
@@ -183,6 +234,16 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
   const labTests = billData.items?.filter(i => i.category === 'LabTest') || []
   const otherItems = billData.items?.filter(i => i.category !== 'LabTest') || []
 
+  async function handleFinishConsultation() {
+    try {
+      await api.patch(`/bills/${bill.id}/finish-consultation`)
+      onUpdated()
+      onClose()
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to finish consultation')
+    }
+  }
+
   return (
     <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       {/* Hide close button and non-printable elements during print via CSS */}
@@ -194,9 +255,20 @@ export default function VisitDetailsModal({ bill, onClose, onUpdated }) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download Summary PDF
             </button>
-            <button className={styles.finishBtn} onClick={handleDone} disabled={completing}>
-              {completing ? 'Completing...' : 'Done / Close'}
-            </button>
+            {billData.status === 'Open' ? (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className={styles.finishBtn} onClick={handleFinishConsultation}>
+                  Finish Consultation
+                </button>
+                <button className={styles.finishBtn} onClick={handleDone} disabled={completing} style={{ background: '#059669' }}>
+                  {completing ? 'Completing...' : 'Done / Close'}
+                </button>
+              </div>
+            ) : (
+              <button className={styles.finishBtn} onClick={onClose} style={{ background: '#64748b' }}>
+                Close
+              </button>
+            )}
             <button className={styles.closeBtn} onClick={onClose}>✕</button>
           </div>
         </div>

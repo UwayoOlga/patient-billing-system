@@ -5,6 +5,7 @@ import api from '../../utils/api'
 
 import AddChargeModal from './AddChargeModal'
 import VisitDetailsModal from './VisitDetailsModal'
+import DoctorReportsTab from './DoctorReportsTab'
 import styles from './DoctorDashboard.module.css'
 import ProfileTab from '../../components/ProfileTab'
 import logo from '../../assets/logo.jpg'
@@ -67,7 +68,7 @@ export default function DoctorDashboard() {
     try {
       // Only fetch patients this doctor has treated or registered
       const { data } = await api.get('/patient/mine')
-      setPatients(data)
+      setPatients((data || []).sort((a, b) => b.id - a.id))
     } catch {
       // silently fail
     } finally {
@@ -120,10 +121,22 @@ export default function DoctorDashboard() {
   }
 
   const activeVisits = bills.filter(b => b.status === 'Open')
-  const completedVisits = bills.filter(b => b.status !== 'Open')
-  const completedToday = completedVisits.filter(b => {
+  const completedVisits = bills.filter(b => b.status !== 'Open' && b.status !== 'Trash')
+  
+  // Show in "Completed Today":
+  // 1. Bills created today that are completed
+  // 2. Bills with ConsultationDone status (finished consultations)
+  const completedToday = bills.filter(b => {
     const today = new Date().toDateString()
-    return new Date(b.createdAt).toDateString() === today
+    const billDate = new Date(b.createdAt).toDateString()
+    
+    // Include ConsultationDone bills (consultations finished today)
+    if (b.status === 'ConsultationDone') return true
+    
+    // Include other completed bills created today
+    if (billDate === today && b.status !== 'Open' && b.status !== 'Trash') return true
+    
+    return false
   })
 
   const filteredPatients = patients.filter(p =>
@@ -148,6 +161,10 @@ export default function DoctorDashboard() {
     {
       key: 'visits', label: 'Visits',
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+    },
+    {
+      key: 'reports', label: 'Reports',
+      icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
     },
     {
       key: 'trash', label: 'Trash',
@@ -180,7 +197,12 @@ export default function DoctorDashboard() {
           display: 'flex', alignItems: 'center', gap: '12px',
           animation: 'fadeInDown 0.4s cubic-bezier(0, 0, 0.2, 1)'
         }}>
-          <span style={{ fontSize: '20px' }}>{notification.icon || '✓'}</span> {notification.message}
+          <div className={styles.notificationIcon}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+          {notification.message}
         </div>
       )}
 
@@ -273,9 +295,9 @@ export default function DoctorDashboard() {
             </section>
 
             <section className={styles.section}>
-              <h3 className={styles.sectionTitle}>Completed Today</h3>
+              <h3 className={styles.sectionTitle}>Completed Consultations</h3>
               {completedToday.length === 0 ? (
-                <div className={styles.empty}>No completed visits today.</div>
+                <div className={styles.empty}>No completed consultations today.</div>
               ) : (
                 <div className={styles.completedList}>
                   {completedToday.map(bill => (
@@ -450,6 +472,9 @@ export default function DoctorDashboard() {
 
         {/* ─── PROFILE TAB ─── */}
         {activeTab === 'profile' && <ProfileTab />}
+
+        {/* ─── REPORTS TAB ─── */}
+        {activeTab === 'reports' && <DoctorReportsTab />}
       </main>
 
 
@@ -523,7 +548,7 @@ function ActiveVisitCard({ bill, onAddCharge, onView, onDelete }) {
         </div>
       </div>
       <div className={styles.actionBtns}>
-        <button className={styles.viewBtn} onClick={onView}>View Details / PDF</button>
+        <button className={styles.viewBtn} onClick={onView}>View Details</button>
         <button className={styles.addChargesBtn} onClick={onAddCharge}>+ Add Charges</button>
       </div>
     </div>
@@ -532,13 +557,16 @@ function ActiveVisitCard({ bill, onAddCharge, onView, onDelete }) {
 
 function CompletedRow({ bill, onView }) {
   const time = new Date(bill.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const statusDisplay = bill.status === 'ConsultationDone' ? 'Consultation Complete' : bill.status
+  const statusClass = bill.status === 'ConsultationDone' ? styles.statusConsultationDone : styles.statusClosed
+  
   return (
     <div className={styles.completedRow}>
       <span className={styles.completedTime}>{time}</span>
       <span className={styles.completedName}>{bill.patientName}</span>
       <span className={styles.completedVisit}>{bill.billNumber}</span>
-      <span className={styles.statusClosed}>{bill.status}</span>
-      <button className={styles.viewBtnText} onClick={onView}>View PDF</button>
+      <span className={statusClass}>{statusDisplay}</span>
+      <button className={styles.viewBtnText} onClick={onView}>View Details</button>
     </div>
   )
 }
