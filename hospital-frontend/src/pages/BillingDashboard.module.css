@@ -168,6 +168,15 @@
   color: var(--text-main);
 }
 
+.statTrend {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 
 /* ── Charts ── */
 .chartsGrid {
@@ -363,6 +372,20 @@
   font-weight: 900;
 }
 
+.pendingTag {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pendingTag::before {
+  content: '⏳';
+  font-weight: 900;
+}
+
 .reportsPage {
   animation: fadeIn 0.3s ease-out;
 }
@@ -539,6 +562,10 @@
 @media (max-width: 768px) {
   .statsRow {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .chartsGrid {
+    grid-template-columns: 1fr;
   }
 }
 

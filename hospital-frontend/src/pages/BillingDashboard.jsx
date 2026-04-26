@@ -138,21 +138,27 @@ export default function BillingDashboard() {
     setLoading(true)
     try {
       const { data } = await api.get('/bills')
-      // Only show bills as "Paid" if they have no balance due
+      // Enhanced payment status logic - only show "Paid" when actually fully paid
       const processedBills = data.map(bill => {
         let displayStatus = bill.status;
+        
+        // Only mark as "Paid" if balance is zero or negative AND there are confirmed payments
         if (bill.balanceDue <= 0 && bill.totalPaid > 0) {
           displayStatus = 'Paid';
-        } else if (bill.totalPaid > 0 && bill.balanceDue > 0) {
+        } 
+        // Show "Partial" if there are payments but still balance remaining
+        else if (bill.totalPaid > 0 && bill.balanceDue > 0) {
           displayStatus = 'Partial';
         }
+        // Keep original status for Open, Finalized, etc.
+        
         return { ...bill, status: displayStatus };
       })
       setBills(processedBills)
       
-      // Update total outstanding
+      // Update total outstanding - only count bills that aren't fully paid
       const totalOutstanding = processedBills.reduce((acc, b) => 
-        acc + (b.status !== 'Paid' ? b.balanceDue : 0), 0
+        acc + (b.status !== 'Paid' ? Math.max(0, b.balanceDue) : 0), 0
       )
       setDashboardData(prev => ({ ...prev, totalOutstanding }))
     } catch (err) {
@@ -351,27 +357,43 @@ export default function BillingDashboard() {
 
         {activeTab === 'profile' ? <ProfileTab /> : activeTab === 'dashboard' && (
           <>
-            {/* Stats */}
+            {/* Enhanced Stats */}
             <div className={styles.statsRow}>
               <div className={styles.statCard}>
                 <div className={styles.statLabel}>Today's Collection</div>
                 <div className={styles.statValue} style={{ color: '#059669' }}>RWF {dashboardData.todayRevenue.toLocaleString()}</div>
+                <div className={styles.statTrend} style={{ color: '#059669', fontSize: '12px', marginTop: '4px' }}>
+                  +{Math.round((dashboardData.todayRevenue / Math.max(1, dashboardData.weekRevenue / 7)) * 100)}% vs avg
+                </div>
+              </div>
+              <div className={styles.statCard}>
+                <div className={styles.statLabel}>Week Collection</div>
+                <div className={styles.statValue} style={{ color: '#0ea5e9' }}>RWF {dashboardData.weekRevenue.toLocaleString()}</div>
+                <div className={styles.statTrend} style={{ color: '#64748b', fontSize: '12px', marginTop: '4px' }}>
+                  Last 7 days
+                </div>
               </div>
               <div className={styles.statCard}>
                 <div className={styles.statLabel}>Total Outstanding</div>
-                <div className={styles.statValue}>RWF {totalOutstanding.toLocaleString()}</div>
+                <div className={styles.statValue} style={{ color: totalOutstanding > 0 ? '#dc2626' : '#059669' }}>
+                  RWF {totalOutstanding.toLocaleString()}
+                </div>
+                <div className={styles.statTrend} style={{ color: '#64748b', fontSize: '12px', marginTop: '4px' }}>
+                  {bills.filter(b => b.status !== 'Paid').length} unpaid bills
+                </div>
               </div>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>Open Bills</div>
-                <div className={styles.statValue}>{openCount}</div>
-              </div>
-              <div className={styles.statCard}>
-                <div className={styles.statLabel}>Finalized</div>
-                <div className={styles.statValue}>{finalizedCount}</div>
+                <div className={styles.statLabel}>Collection Rate</div>
+                <div className={styles.statValue} style={{ color: '#8b5cf6' }}>
+                  {bills.length > 0 ? Math.round((paidCount / bills.length) * 100) : 0}%
+                </div>
+                <div className={styles.statTrend} style={{ color: '#64748b', fontSize: '12px', marginTop: '4px' }}>
+                  {paidCount} of {bills.length} bills
+                </div>
               </div>
             </div>
 
-            {/* Graphs / Analytics */}
+            {/* Enhanced Analytics Grid */}
             <div className={styles.chartsGrid}>
               <div className={styles.chartCard}>
                 <h3 className={styles.chartTitle}>
@@ -383,16 +405,17 @@ export default function BillingDashboard() {
                     <AreaChart data={dashboardData.dailyTrends}>
                       <defs>
                         <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.1}/>
+                          <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.2}/>
                           <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `RWF ${value >= 1000 ? (value/1000) + 'k' : value}`} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `${value >= 1000 ? (value/1000) + 'k' : value}`} />
                       <Tooltip 
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', backgroundColor: '#fff' }}
                         formatter={(value) => [`RWF ${value.toLocaleString()}`, 'Revenue']}
+                        labelStyle={{ color: '#0f172a', fontWeight: 600 }}
                       />
                       <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
                     </AreaChart>
@@ -403,7 +426,7 @@ export default function BillingDashboard() {
               <div className={styles.chartCard}>
                 <h3 className={styles.chartTitle}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
-                  Payment Method Distribution
+                  Payment Methods Distribution
                 </h3>
                 <div className={styles.chartContainer}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -413,7 +436,7 @@ export default function BillingDashboard() {
                         cx="50%"
                         cy="50%"
                         innerRadius={60}
-                        outerRadius={80}
+                        outerRadius={90}
                         paddingAngle={5}
                         dataKey="value"
                       >
@@ -422,11 +445,78 @@ export default function BillingDashboard() {
                         ))}
                       </Pie>
                       <Tooltip 
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                        formatter={(value) => `RWF ${value.toLocaleString()}`}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', backgroundColor: '#fff' }}
+                        formatter={(value, name) => [`RWF ${value.toLocaleString()}`, name]}
                       />
-                      <Legend verticalAlign="bottom" height={36}/>
+                      <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '12px', fontWeight: 600 }}/>
                     </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* Additional Analytics Row */}
+            <div className={styles.chartsGrid}>
+              <div className={styles.chartCard}>
+                <h3 className={styles.chartTitle}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  Bill Status Overview
+                </h3>
+                <div className={styles.chartContainer}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[
+                      { name: 'Open', count: openCount, color: '#f59e0b' },
+                      { name: 'Finalized', count: finalizedCount, color: '#0ea5e9' },
+                      { name: 'Partial', count: bills.filter(b => b.status === 'Partial').length, color: '#f97316' },
+                      { name: 'Paid', count: paidCount, color: '#10b981' }
+                    ]}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', backgroundColor: '#fff' }}
+                        formatter={(value, name) => [`${value} bills`, name]}
+                      />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        {[
+                          { name: 'Open', count: openCount, color: '#f59e0b' },
+                          { name: 'Finalized', count: finalizedCount, color: '#0ea5e9' },
+                          { name: 'Partial', count: bills.filter(b => b.status === 'Partial').length, color: '#f97316' },
+                          { name: 'Paid', count: paidCount, color: '#10b981' }
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className={styles.chartCard}>
+                <h3 className={styles.chartTitle}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                  Revenue vs Outstanding
+                </h3>
+                <div className={styles.chartContainer}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[
+                      { 
+                        name: 'This Week', 
+                        collected: dashboardData.weekRevenue, 
+                        outstanding: totalOutstanding 
+                      }
+                    ]}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `${value >= 1000 ? (value/1000) + 'k' : value}`} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', backgroundColor: '#fff' }}
+                        formatter={(value, name) => [`RWF ${value.toLocaleString()}`, name === 'collected' ? 'Collected' : 'Outstanding']}
+                      />
+                      <Legend />
+                      <Bar dataKey="collected" fill="#10b981" name="Collected" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="outstanding" fill="#dc2626" name="Outstanding" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -472,6 +562,8 @@ export default function BillingDashboard() {
                       <th>Patient Name</th>
                       <th>Status</th>
                       <th>Created</th>
+                      <th className={styles.amount}>Total Amount</th>
+                      <th className={styles.amount}>Paid</th>
                       <th className={styles.amount}>Balance</th>
                       <th>Actions</th>
                     </tr>
@@ -487,17 +579,25 @@ export default function BillingDashboard() {
                           </span>
                         </td>
                         <td>{new Date(bill.createdAt).toLocaleDateString()}</td>
-                        <td className={styles.amount}>RWF {bill.balanceDue.toLocaleString()}</td>
+                        <td className={styles.amount}>RWF {bill.totalAmount.toLocaleString()}</td>
+                        <td className={styles.amount} style={{ color: bill.totalPaid > 0 ? '#059669' : '#64748b' }}>
+                          RWF {bill.totalPaid.toLocaleString()}
+                        </td>
+                        <td className={styles.amount} style={{ color: bill.balanceDue > 0 ? '#dc2626' : '#059669' }}>
+                          RWF {bill.balanceDue.toLocaleString()}
+                        </td>
                         <td>
-                          {bill.status === 'Finalized' || bill.status === 'Open' ? (
+                          {(bill.status === 'Finalized' || (bill.status === 'Open' && bill.totalAmount > 0) || bill.status === 'Partial') ? (
                             <button 
                               className={styles.payBtn}
                               onClick={() => setSelectedBillId(bill.id)}
                             >
-                              Process Payment
+                              {bill.status === 'Partial' ? 'Complete Payment' : 'Process Payment'}
                             </button>
-                          ) : (
+                          ) : bill.status === 'Paid' ? (
                             <span className={styles.completedTag}>Fully Paid</span>
+                          ) : (
+                            <span className={styles.pendingTag}>Pending</span>
                           )}
                         </td>
                       </tr>
