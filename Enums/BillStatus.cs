@@ -7,6 +7,7 @@ namespace HospitalBilling.Enums
         Paid,       // Payment confirmed
         Disputed,   // Patient has raised a dispute
         Cancelled,
-        Trash
+        Trash,
+        ConsultationDone // Added at the end to preserve integer mapping for existing records
     }
 }

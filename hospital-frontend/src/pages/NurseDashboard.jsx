@@ -4,6 +4,13 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './NurseDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
+import { 
+  createStandardReportHeader, 
+  createStandardReportFooter, 
+  createStandardTable,
+  generateReportFilename,
+  createStatsSummary
+} from '../utils/reportUtils'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
 import logo from '../assets/logo.jpg'
@@ -58,7 +65,7 @@ export default function NurseDashboard() {
   const visibleBills = useMemo(() => {
     const q = searchBill.trim().toLowerCase()
     return bills
-      .filter(b => b.status === 'Open')
+      .filter(b => b.status === 'Open' || b.status === 'ConsultationDone')
       .filter(b => getNursingOrders(b).length > 0)
       .filter(b => !q || b.billNumber?.toLowerCase().includes(q))
   }, [bills, searchBill])
@@ -157,28 +164,62 @@ export default function NurseDashboard() {
   const exportToPDF = () => {
     if (!reportData) return
     const doc = new jsPDF()
+    
+    // Standardized header
+    const dateRange = `${reportRange.start} to ${reportRange.end}`
+    let y = createStandardReportHeader(
+      doc, 
+      'NURSING PERFORMANCE REPORT', 
+      `Nursing Services & Patient Care Analysis - ${user?.name}`,
+      {
+        generatedBy: `Nurse ${user?.name}`,
+        dateRange: dateRange,
+        additionalInfo: `Total Services Completed: ${reportData.services.length}`
+      }
+    )
+
+    // Summary statistics
+    const stats = [
+      { label: 'Total Services Completed', value: reportData.services.length.toString() },
+      { label: 'Patients Served', value: new Set(reportData.services.map(s => s.patientName)).size.toString() },
+      { label: 'Report Period', value: dateRange },
+      { label: 'Generated Date', value: new Date(reportData.generatedAt).toLocaleDateString() }
+    ]
+
+    y = createStatsSummary(doc, stats, y)
+    y += 10
+
+    // Services table
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('NURSING SERVICES COMPLETED', 14, y)
+    y += 10
+
     const tableData = reportData.services.map(s => [
       new Date(s.completedAt).toLocaleDateString(),
       s.patientName,
       s.billNumber,
       s.description,
-      s.notes || ''
+      s.notes || '—'
     ])
 
-    doc.setFontSize(20); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
-    doc.setFontSize(10); doc.setTextColor(100); doc.text('Nursing Performance Report', 14, 28)
-    doc.text(`Generated: ${reportData.generatedAt}`, 14, 34)
-    doc.text(`Period: ${reportRange.start} to ${reportRange.end}`, 14, 40)
+    createStandardTable(
+      doc,
+      ['Date', 'Patient Name', 'Bill #', 'Service Description', 'Clinical Notes'],
+      tableData,
+      y,
+      { headerColor: [14, 165, 233] } // Nursing blue
+    )
 
-    doc.autoTable({
-      startY: 50,
-      head: [['Date', 'Patient Name', 'Bill #', 'Service', 'Notes']],
-      body: tableData,
-      theme: 'striped',
-      headStyles: { fillColor: [14, 165, 233] } // Use Nurse blue
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'This report contains confidential nursing care and patient service data.'
     })
 
-    doc.save(`Nurse_Performance_Report_${reportRange.start}.pdf`)
+    // Save with standardized filename
+    const filename = generateReportFilename('Nursing_Performance', user?.name || 'Nurse', dateRange.replace(' to ', '_to_'))
+    doc.save(filename)
   }
 
   function handlePrintReport() {

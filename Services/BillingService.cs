@@ -62,8 +62,8 @@ namespace HospitalBilling.Services
             var bill = await _db.Bills.Include(b => b.Patient).FirstOrDefaultAsync(b => b.Id == dto.BillId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open)
-                throw new InvalidOperationException("Cannot add items to a bill that is not Open.");
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.ConsultationDone)
+                throw new InvalidOperationException("Cannot add items to a visit that is finalized or closed.");
 
             // Validate category is allowed for this role
             ValidateCategoryForRole(dto.Category, staffRole);
@@ -150,7 +150,7 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(i => i.Id == billItemId)
                 ?? throw new KeyNotFoundException("Bill item not found.");
 
-            if (item.Bill.Status != BillStatus.Open)
+            if (item.Bill.Status != BillStatus.Open && item.Bill.Status != BillStatus.ConsultationDone)
                 throw new InvalidOperationException("Cannot revert tests on a finalized bill.");
 
             if (item.Category != BillItemCategory.LabTest)
@@ -174,7 +174,7 @@ namespace HospitalBilling.Services
             if (item.Category != BillItemCategory.Medication)
                 throw new InvalidOperationException("Only items in the Medication category can be dispensed via pharmacy.");
 
-            if (item.Bill.Status != BillStatus.Open)
+            if (item.Bill.Status != BillStatus.Open && item.Bill.Status != BillStatus.ConsultationDone)
                 throw new InvalidOperationException("Cannot dispense items for a finalized bill.");
 
             // Stock Management
@@ -202,7 +202,7 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(i => i.Id == billItemId)
                 ?? throw new KeyNotFoundException("Nursing order not found.");
 
-            if (item.Bill.Status != BillStatus.Open)
+            if (item.Bill.Status != BillStatus.Open && item.Bill.Status != BillStatus.ConsultationDone)
                 throw new InvalidOperationException("Cannot complete nursing orders for a finalized bill.");
 
             if (item.Category != BillItemCategory.NursingService
@@ -237,8 +237,8 @@ namespace HospitalBilling.Services
                 .FirstOrDefaultAsync(b => b.Id == billId)
                 ?? throw new KeyNotFoundException("Bill not found.");
 
-            if (bill.Status != BillStatus.Open)
-                throw new InvalidOperationException("Only Open bills can be finalized.");
+            if (bill.Status != BillStatus.Open && bill.Status != BillStatus.ConsultationDone)
+                throw new InvalidOperationException("Only Open or ConsultationDone visits can be finalized.");
 
             var pendingCount = bill.Items.Count(i => !i.IsCompleted);
             var pendingRxCount = await _db.Prescriptions.CountAsync(p => p.BillId == billId && p.Status == 0);
@@ -258,6 +258,24 @@ namespace HospitalBilling.Services
             bill.FinalizedAt = DateTime.UtcNow;
             bill.FinalizedByStaffId = staffId;
 
+            await _db.SaveChangesAsync();
+
+            return MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
+        }
+        
+        public async Task<BillDto> FinishConsultationAsync(int billId, int staffId)
+        {
+            var bill = await _db.Bills
+                .Include(b => b.Patient)
+                .Include(b => b.Items)
+                .FirstOrDefaultAsync(b => b.Id == billId)
+                ?? throw new KeyNotFoundException("Bill not found.");
+
+            if (bill.Status != BillStatus.Open)
+                throw new InvalidOperationException("Consultation can only be finished for Open visits.");
+
+            bill.Status = BillStatus.ConsultationDone;
+            // No need to set FinalizedByStaffId or FinalizedAt here as that's for the billing office
             await _db.SaveChangesAsync();
 
             return MapToDto(bill, bill.Patient?.FullName ?? "Unknown Patient");
@@ -595,6 +613,14 @@ namespace HospitalBilling.Services
             var category = await _db.ServiceCategories.FindAsync(dto.ServiceCategoryId) 
                 ?? throw new KeyNotFoundException("Service category (drug) not found");
 
+            if (category.StockQuantity.HasValue)
+            {
+                if (category.StockQuantity < dto.Quantity)
+                    throw new InvalidOperationException($"Insufficient stock for {category.Name}. Available: {category.StockQuantity}");
+                
+                category.StockQuantity -= dto.Quantity;
+            }
+
             var billItem = new BillItem
             {
                 BillId = prescription.BillId,
@@ -782,6 +808,101 @@ namespace HospitalBilling.Services
             };
 
             return report;
+        }
+
+        public async Task<DoctorReportDto> GetDoctorReportAsync(int doctorId, DateTime startDate, DateTime endDate)
+        {
+            try
+            {
+                var doctor = await _db.Staff.FindAsync(doctorId);
+                if (doctor == null)
+                {
+                    throw new KeyNotFoundException($"Doctor with ID {doctorId} not found.");
+                }
+
+                // Get bills assigned to this doctor
+                var bills = await _db.Bills
+                    .Include(b => b.Patient)
+                    .Include(b => b.Items)
+                    .Where(b => b.AssignedDoctorId == doctorId && 
+                               b.CreatedAt >= startDate && 
+                               b.CreatedAt <= endDate)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .ToListAsync();
+
+                // Basic statistics
+                var totalPatients = bills.Select(b => b.PatientId).Distinct().Count();
+                var completedConsultations = bills.Count(b => b.Status == BillStatus.ConsultationDone);
+                var activeConsultations = bills.Count(b => b.Status == BillStatus.Open);
+                var totalRevenue = bills.Sum(b => b.TotalAmount);
+
+                // Daily stats
+                var dailyStats = bills
+                    .GroupBy(b => b.CreatedAt.Date)
+                    .Select(g => new DoctorReportDailyStatsDto
+                    {
+                        Date = g.Key,
+                        PatientsCount = g.Select(b => b.PatientId).Distinct().Count(),
+                        ConsultationsCompleted = g.Count(b => b.Status == BillStatus.ConsultationDone),
+                        Revenue = g.Sum(b => b.TotalAmount)
+                    })
+                    .OrderBy(d => d.Date)
+                    .ToList();
+
+                // Service breakdown - all items in bills assigned to this doctor
+                var allItems = bills.SelectMany(b => b.Items).ToList();
+                var serviceBreakdown = allItems
+                    .GroupBy(i => i.Category)
+                    .Select(g => new DoctorReportServiceCategoryDto
+                    {
+                        Category = g.Key.ToString(),
+                        Count = g.Count(),
+                        Revenue = g.Sum(i => i.GrossAmount)
+                    })
+                    .ToList();
+
+                // Calculate percentages
+                var totalServiceRevenue = serviceBreakdown.Sum(s => s.Revenue);
+                foreach (var service in serviceBreakdown)
+                {
+                    service.Percentage = totalServiceRevenue > 0 ? 
+                        Math.Round((double)(service.Revenue / totalServiceRevenue) * 100, 1) : 0;
+                }
+
+                // Consultation details
+                var consultations = bills.Select(b => new DoctorReportConsultationDto
+                {
+                    BillId = b.Id,
+                    BillNumber = b.BillNumber,
+                    PatientName = b.Patient?.FullName ?? "Unknown",
+                    ConsultationDate = b.CreatedAt,
+                    Status = b.Status.ToString(),
+                    ServicesCount = b.Items.Count,
+                    TotalAmount = b.TotalAmount,
+                    Services = b.Items.Select(i => $"{i.Category}: {i.Description}").ToList(),
+                    Prescriptions = new List<string>() // Simplified - no prescriptions for now
+                }).ToList();
+
+                return new DoctorReportDto
+                {
+                    DoctorName = doctor.FullName,
+                    StartDate = startDate,
+                    EndDate = endDate,
+                    TotalPatients = totalPatients,
+                    TotalConsultations = bills.Count,
+                    CompletedConsultations = completedConsultations,
+                    ActiveConsultations = activeConsultations,
+                    TotalRevenue = totalRevenue,
+                    AverageConsultationValue = bills.Count > 0 ? totalRevenue / bills.Count : 0,
+                    Consultations = consultations,
+                    DailyStats = dailyStats,
+                    ServiceBreakdown = serviceBreakdown
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to generate doctor report: {ex.Message}", ex);
+            }
         }
     }
 }

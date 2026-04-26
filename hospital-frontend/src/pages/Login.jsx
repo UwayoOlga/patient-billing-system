@@ -41,9 +41,9 @@ export default function Login() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.loginHeader}>
-          <img src={logo} alt="Logo" style={{ height: '64px', borderRadius: '12px', marginBottom: '20px' }} />
-          <h2>Staff Portal</h2>
-          <p>Login to your account to manage billing</p>
+          <img src={logo} alt="Hospital Logo" className={styles.logoImage} />
+          <h2>Hospital Staff Portal</h2>
+          <p>Secure access to hospital management system</p>
         </div>
         <form onSubmit={handleSubmit} className={styles.form}>
           {error && <div className={styles.error}>{error}</div>}
@@ -71,7 +71,7 @@ export default function Login() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
           <p className={styles.switchLink}>
-            Account creation is managed by Admin.
+            Account management is handled by system administrators.
           </p>
         </form>
       </div>

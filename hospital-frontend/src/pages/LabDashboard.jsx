@@ -4,6 +4,11 @@ import { getUser, logout } from '../utils/auth'
 import api from '../utils/api'
 import styles from './LabDashboard.module.css'
 import ProfileTab from '../components/ProfileTab'
+import { 
+  createStandardReportHeader, 
+  createStandardReportFooter, 
+  generateReportFilename
+} from '../utils/reportUtils'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
 import logo from '../assets/logo.jpg'
@@ -45,7 +50,7 @@ export default function LabDashboard() {
       
       // Only keep open/finalized visits that actually have at least one Lab Test requested
       const visitsWithLabWork = data.filter(b => 
-        (b.status === 'Open' || b.status === 'Finalized') && 
+        (b.status === 'Open' || b.status === 'ConsultationDone' || b.status === 'Finalized') && 
         b.items.some(i => i.category === 'LabTest')
       )
       setAllVisits(visitsWithLabWork)
@@ -122,36 +127,78 @@ export default function LabDashboard() {
   const exportToPDF = (test, visit) => {
     const doc = new jsPDF()
     
-    // Header
-    doc.setFontSize(22); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
-    doc.setFontSize(10); doc.setTextColor(100); doc.text('Advanced Clinical Laboratory Services', 14, 28)
-    
-    // Meta Information
-    doc.setDrawColor(226, 232, 240); doc.line(14, 35, 196, 35)
-    
-    doc.setFontSize(9); doc.setTextColor(100); doc.text('PATIENT NAME', 14, 45); doc.text('BILL / VISIT ID', 110, 45)
-    doc.setFontSize(11); doc.setTextColor(15, 23, 42); 
-    doc.text(visit?.patientName || test?.patientName || 'N/A', 14, 51)
-    doc.text(visit?.billNumber || test?.billNumber || 'N/A', 110, 51)
-    
-    doc.setFontSize(9); doc.setTextColor(100); doc.text('INVESTIGATION', 14, 62); doc.text('REPORT DATE', 110, 62)
-    doc.setFontSize(11); doc.setTextColor(15, 23, 42);
-    doc.text(test.description, 14, 68)
-    doc.text(new Date().toLocaleString(), 110, 68)
+    // Standardized header
+    let y = createStandardReportHeader(
+      doc, 
+      'LABORATORY TEST REPORT', 
+      `Clinical Investigation Results - ${visit?.patientName || test?.patientName || 'Patient'}`,
+      {
+        generatedBy: `Lab Technician ${user?.name}`,
+        additionalInfo: `Test: ${test.description} | Bill: ${visit?.billNumber || test?.billNumber || 'N/A'}`
+      }
+    )
 
-    // Results Box
-    doc.setFillColor(248, 250, 252); doc.roundedRect(14, 80, 182, 60, 3, 3, 'F')
-    doc.setFontSize(10); doc.setTextColor(100); doc.text('CONFIDENTIAL CLINICAL FINDINGS', 20, 90)
-    doc.setFontSize(11); doc.setTextColor(30, 41, 59);
-    const splitText = doc.splitTextToSize(test.notes || 'No findings recorded.', 170)
-    doc.text(splitText, 20, 100)
+    // Patient & Test Information
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('TEST INFORMATION', 14, y)
+    y += 10
 
-    // Footer
-    doc.setFontSize(8); doc.setTextColor(148, 163, 184)
-    doc.text('This is a digitally certified medical report.', 14, 160)
-    doc.text(`Authorized by: ${user?.name || 'Lab Department'}`, 14, 165)
-    
-    doc.save(`Lab_Report_${test.description.replace(/\s+/g, '_')}.pdf`)
+    const testInfo = [
+      { label: 'Investigation Type', value: test.description },
+      { label: 'Test Status', value: test.isCompleted ? 'Completed' : 'Pending' },
+      { label: 'Completion Date', value: test.completedAt ? new Date(test.completedAt).toLocaleDateString() : 'Pending' },
+      { label: 'Authorized By', value: user?.name || 'Lab Department' }
+    ]
+
+    testInfo.forEach(info => {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(100, 116, 139)
+      doc.text(info.label + ':', 14, y)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(15, 23, 42)
+      doc.text(info.value, 70, y)
+      y += 6
+    })
+    y += 10
+
+    // Clinical Findings Section
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('CLINICAL FINDINGS & RESULTS', 14, y)
+    y += 10
+
+    // Results box with professional styling
+    doc.setFillColor(248, 250, 252)
+    doc.roundedRect(14, y - 5, 182, 50, 3, 3, 'F')
+    doc.setDrawColor(200, 210, 220)
+    doc.roundedRect(14, y - 5, 182, 50, 3, 3, 'S')
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(30, 41, 59)
+    const findings = test.notes || 'Test results pending completion.'
+    const splitText = doc.splitTextToSize(findings, 170)
+    doc.text(splitText, 20, y + 5)
+    y += 60
+
+    // Clinical interpretation note
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8)
+    doc.setTextColor(100, 116, 139)
+    doc.text('Note: This report should be interpreted in conjunction with clinical findings and other investigations.', 14, y)
+
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'This is a digitally certified laboratory report. Maintain confidentiality as per medical ethics.'
+    })
+
+    // Save with standardized filename
+    const filename = generateReportFilename('Lab_Report', test.description, visit?.billNumber || 'Test')
+    doc.save(filename)
   }
 
   function handlePrint(test, visit) {

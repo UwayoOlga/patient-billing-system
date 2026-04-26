@@ -24,7 +24,7 @@ namespace HospitalBilling.Controllers
             return Ok(await _db.ServiceCategories.ToListAsync());
         }
 
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,Pharmacist")]
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] ServiceCategory category)
         {
@@ -33,7 +33,7 @@ namespace HospitalBilling.Controllers
             return Ok(category);
         }
 
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,Pharmacist")]
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] ServiceCategory dto)
         {
@@ -51,7 +51,7 @@ namespace HospitalBilling.Controllers
             return Ok(category);
         }
 
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,Pharmacist")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {

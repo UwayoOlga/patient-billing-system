@@ -7,6 +7,19 @@ export default function AddPrescriptionModal({ bill, onClose, onAdded }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const [availableDrugs, setAvailableDrugs] = useState([])
+
+  useEffect(() => {
+    async function fetchDrugs() {
+      try {
+        const { data } = await api.get('/servicecategory')
+        // Filter for pharmacy items (ResponsibleRole 2)
+        setAvailableDrugs(data.filter(c => c.isActive && c.responsibleRole === 2))
+      } catch (err) { console.error('Failed to fetch drugs') }
+    }
+    fetchDrugs()
+  }, [])
+
   function addItem() {
     setItems([...items, { id: Date.now(), drugName: '', dosage: '', frequency: '', duration: '' }])
   }
@@ -71,14 +84,19 @@ export default function AddPrescriptionModal({ bill, onClose, onAdded }) {
                 <div className={styles.gridRows}>
                   <div className={styles.field} style={{ flex: 2 }}>
                     <label>Drug Name</label>
-                    <input 
+                    <select 
                       className={styles.input}
-                      type="text"
-                      placeholder="e.g., Paracetamol"
                       value={item.drugName}
                       onChange={e => updateItem(item.id, 'drugName', e.target.value)}
                       required
-                    />
+                    >
+                      <option value="">-- Select drug from stock --</option>
+                      {availableDrugs.map(drug => (
+                        <option key={drug.id} value={drug.name}>
+                          {drug.name} ({drug.stockQuantity} available)
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className={styles.field} style={{ flex: 1 }}>

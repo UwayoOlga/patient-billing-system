@@ -3,116 +3,148 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a56db 0%, #0e9f6e 100%);
+  background: linear-gradient(135deg, #1e40af 0%, #0369a1 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 48px 40px;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 40px;
   width: 100%;
   max-width: 400px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
-.logo {
+.loginHeader {
   text-align: center;
   margin-bottom: 32px;
 }
 
-.logoIcon {
-  font-size: 48px;
-  display: block;
+.logoImage {
+  height: 48px;
+  width: 48px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  object-fit: cover;
+}
+
+.loginHeader h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
   margin-bottom: 8px;
 }
 
-.logo h1 {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1a202c;
-}
-
-.logo p {
+.loginHeader p {
   font-size: 14px;
-  color: #718096;
-  margin-top: 4px;
+  color: #64748b;
 }
 
-.form { display: flex; flex-direction: column; gap: 20px; }
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 
-.field { display: flex; flex-direction: column; gap: 6px; }
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
 .field label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #4a5568;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
 }
 
 .field input {
-  padding: 10px 14px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: #ffffff;
 }
 
-.field input:focus { border-color: #1a56db; }
+.field input:focus {
+  border-color: #1e40af;
+  box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+}
+
+.field input::placeholder {
+  color: #9ca3af;
+}
 
 .btn {
-  padding: 12px;
-  background: #1a56db;
-  color: #fff;
+  padding: 12px 16px;
+  background: #1e40af;
+  color: #ffffff;
   border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  transition: background 0.2s;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  cursor: pointer;
 }
 
-.btn:hover:not(:disabled) { background: #1447c0; }
-.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .error {
-  background: #fff5f5;
-  border: 1px solid #feb2b2;
-  color: #c53030;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 14px;
 }
 
 .select {
-  padding: 10px 14px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
   font-size: 14px;
   outline: none;
-  background: #fff;
-  transition: border-color 0.2s;
+  background: #ffffff;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.select:focus { border-color: #1a56db; }
+.select:focus {
+  border-color: #1e40af;
+  box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+}
 
 .switchLink {
   text-align: center;
   font-size: 13px;
-  color: #718096;
+  color: #64748b;
+  margin-top: 8px;
 }
 
 .switchLink a {
-  color: #1a56db;
-  font-weight: 600;
+  color: #1e40af;
+  font-weight: 500;
   text-decoration: none;
 }
 
-.switchLink a:hover { text-decoration: underline; }
+.switchLink a:hover {
+  text-decoration: underline;
+}
 
 .successMsg {
-  background: #f0fff4;
-  border: 1px solid #9ae6b4;
-  color: #276749;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 14px;
 }

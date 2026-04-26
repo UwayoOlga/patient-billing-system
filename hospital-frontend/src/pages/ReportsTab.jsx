@@ -5,6 +5,13 @@ import {
   PieChart, Pie, Cell, LineChart, Line
 } from 'recharts'
 import * as XLSX from 'xlsx'
+import { 
+  createStandardReportHeader, 
+  createStandardReportFooter, 
+  createStandardTable,
+  generateReportFilename,
+  createStatsSummary
+} from '../utils/reportUtils'
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
 import logo from '../assets/logo.jpg'
@@ -71,24 +78,64 @@ export default function ReportsTab() {
 
   const exportToPDF = () => {
     const doc = new jsPDF()
-    const tableData = filteredLedger.map(p => [
+    
+    // Standardized header
+    const dateRange = dateRange.start && dateRange.end ? 
+      `${dateRange.start} to ${dateRange.end}` : 
+      'All Time'
+    
+    let y = createStandardReportHeader(
+      doc, 
+      'FINANCIAL REVENUE REPORT', 
+      'Hospital Revenue Performance & Transaction Analysis',
+      {
+        generatedBy: 'Financial Administration',
+        dateRange: dateRange,
+        additionalInfo: `Total Transactions: ${filteredLedger.length} | Revenue Analysis`
+      }
+    )
+
+    // Summary statistics
+    const stats = [
+      { label: 'Total Revenue Generated', value: `RWF ${summary.totalRevenue.toLocaleString()}`, highlight: true },
+      { label: 'Total Transactions', value: filteredLedger.length.toString() },
+      { label: 'Average Transaction Value', value: `RWF ${filteredLedger.length > 0 ? Math.round(summary.totalRevenue / filteredLedger.length).toLocaleString() : 0}` },
+      { label: 'Report Period', value: dateRange }
+    ]
+
+    y = createStatsSummary(doc, stats, y)
+    y += 10
+
+    // Transaction details table
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(15, 23, 42)
+    doc.text('DETAILED TRANSACTION LEDGER', 14, y)
+    y += 10
+
+    const tableData = filteredLedger.slice(0, 25).map(p => [
       new Date(p.paidAt).toLocaleDateString(),
       p.patientName,
       p.billNumber,
-      p.method,
+      p.method.toUpperCase(),
       `RWF ${p.amount.toLocaleString()}`
     ])
-    doc.setFontSize(20); doc.setTextColor(15, 23, 42); doc.text('HOSPITALBILLING', 14, 22)
-    doc.setFontSize(10); doc.setTextColor(100); doc.text('Financial Revenue Report', 14, 28)
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 34)
-    doc.autoTable({
-      startY: 45,
-      head: [['Date', 'Patient Name', 'Bill #', 'Method', 'Amount']],
-      body: tableData,
-      theme: 'striped',
-      headStyles: { fillColor: [15, 23, 42] }
+
+    createStandardTable(
+      doc,
+      ['Date', 'Patient Name', 'Bill #', 'Payment Method', 'Amount'],
+      tableData,
+      y
+    )
+
+    // Standardized footer
+    createStandardReportFooter(doc, {
+      customFooterText: 'This financial report contains confidential hospital revenue data.'
     })
-    doc.save(`Revenue_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+
+    // Save with standardized filename
+    const filename = generateReportFilename('Financial_Revenue', 'Hospital', dateRange.replace(' to ', '_to_'))
+    doc.save(filename)
   }
 
   const handlePrintReport = () => {
